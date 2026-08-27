@@ -3,12 +3,12 @@ import type { WebSocket } from "ws";
 import { GAME_CATALOG, type Player, type Room, type GameModule } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 import { generateRoomCode, normalizeRoomCode } from "./roomCodes";
-import { archeryModule, quizModule, crazy8Module, chessModule, crosswordModule } from "../shared/gameModules";
+import { archeryModule, poolModule, crazy8Module, chessModule, crosswordModule } from "../shared/gameModules";
 
 const gameModuleRegistry = new Map<string, GameModule>();
 gameModuleRegistry.set("archery", archeryModule);
 gameModuleRegistry.set("chess", chessModule);
-gameModuleRegistry.set("quiz", quizModule);
+gameModuleRegistry.set("pool", poolModule);
 gameModuleRegistry.set("crazy8", crazy8Module);
 gameModuleRegistry.set("crossword", crosswordModule);
 

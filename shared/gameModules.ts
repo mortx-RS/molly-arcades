@@ -105,154 +105,162 @@ export const archeryModule: GameModule<ArcheryState, ArcheryAction> = {
   }
 };
 
-const QUIZ_PROMPTS = [
-  "What's your ideal Sunday morning?",
-  "Pick a superpower: flight, invisibility, or time travel?",
-  "Your go-to comfort food?",
-  "Beach vacation or mountain cabin?",
-  "Cats or dogs?",
-  "How do you spend a rainy day?",
-  "Favorite season?",
-  "Early bird or night owl?",
-  "Sweet or savory?",
-  "What's your love language?"
-];
+export type PoolAction =
+  | { type: "turn_result"; pocketedIds: number[]; cuePocketed: boolean; firstHit: number | null }
+  | { type: "place_cue"; x: number; y: number };
 
-const ROUNDS = 5;
-
-function matchScore(a: string, b: string): number {
-  const na = a.trim().toLowerCase();
-  const nb = b.trim().toLowerCase();
-  if (na === nb) return 10;
-  if (na.includes(nb) || nb.includes(na)) return 7;
-  const wa = na.split(/\s+/);
-  const wb = nb.split(/\s+/);
-  const shared = wa.filter((w) => wb.includes(w));
-  if (shared.length > 0) return 5;
-  return 0;
+export interface PoolState {
+  playerIds: [string, string];
+  playerNames: Record<string, string>;
+  currentTurn: string;
+  assignments: [string | null, string | null];
+  turnPocketed: number[];
+  foul: string | null;
+  winnerId: string | null;
+  message: string;
+  breakShot: boolean;
 }
 
-export type QuizAction = {
-  type: "answer";
-  answer: string;
-} | {
-  type: "next_round";
-}
-
-export interface QuizState {
-  round: number;
-  prompts: string[];
-  answers: Record<string, string[]>;
-  submitted: Record<string, boolean>;
-  revealed: boolean;
-  roundScores: number[];
-  compatibilityScore: number;
-}
-
-export const quizModule: GameModule<QuizState, QuizAction> = {
-  id: "quiz",
+export const poolModule: GameModule<PoolState, PoolAction> = {
+  id: "pool",
   mode: "turn-based",
   minPlayers: 2,
   maxPlayers: 2,
   createInitialState(players: Player[]) {
-    const shuffled = [...QUIZ_PROMPTS].sort(() => Math.random() - 0.5);
-    const prompts = shuffled.slice(0, ROUNDS);
     return {
-      round: 0,
-      prompts,
-      answers: { [players[0]!.id]: [], [players[1]!.id]: [] },
-      submitted: { [players[0]!.id]: false, [players[1]!.id]: false },
-      revealed: false,
-      roundScores: [],
-      compatibilityScore: 0
+      playerIds: [players[0]!.id, players[1]!.id],
+      playerNames: Object.fromEntries(players.map((p) => [p.id, p.name])),
+      currentTurn: players[0]!.id,
+      assignments: [null, null],
+      turnPocketed: [],
+      foul: null,
+      winnerId: null,
+      message: `${players[0]!.name}'s break`,
+      breakShot: true,
     };
   },
-  reduce(state, playerId, action: QuizAction) {
-    if (action.type === "next_round") {
-      if (!state.revealed) return state;
-      const nextRound = state.round + 1;
-      const ids = Object.keys(state.answers);
+  reduce(state, playerId, action: PoolAction) {
+    if (state.winnerId) return state;
+    if (state.currentTurn !== playerId) return state;
+    if (state.foul === "placing-cue") return state;
+
+    const otherPlayer = state.playerIds[0] === playerId ? state.playerIds[1]! : state.playerIds[0]!;
+    const currentPlayerIdx = state.playerIds.indexOf(playerId);
+    const otherPlayerIdx = state.playerIds.indexOf(otherPlayer);
+
+    if (action.type === "place_cue") {
       return {
         ...state,
-        round: nextRound,
-        submitted: { [ids[0]!]: false, [ids[1]!]: false },
-        revealed: false
+        foul: null,
+        message: `${state.playerNames[playerId]}'s turn`,
       };
     }
 
-    if (state.revealed) return state;
-    if (state.submitted[playerId]) return state;
+    const { pocketedIds, cuePocketed, firstHit } = action;
+    const currentAssignment = state.assignments[currentPlayerIdx];
+    let newAssignments = [...state.assignments] as [string | null, string | null];
+    let foul: string | null = null;
+    let switchTurn = true;
+    let winnerId: string | null = null;
+    let message = "";
 
-    const newAnswers = {
-      ...state.answers,
-      [playerId]: [...(state.answers[playerId] ?? []), action.answer]
-    };
-    const newSubmitted = { ...state.submitted, [playerId]: true };
+    // Check 8-ball pocketed
+    if (pocketedIds.includes(8)) {
+      const hasAssignment = currentAssignment !== null;
+      const allOwnPocketed = hasAssignment
+        ? pocketedIds.filter((id) => id !== 0 && id !== 8).length >= 7
+        : false;
 
-    const allSubmitted = Object.values(newSubmitted).every(Boolean);
-
-    if (!allSubmitted) {
+      if (!hasAssignment || cuePocketed || !allOwnPocketed) {
+        winnerId = otherPlayer;
+        message = `${state.playerNames[otherPlayer]} wins! (${state.playerNames[playerId]} sank the 8-ball illegally)`;
+      } else {
+        winnerId = playerId;
+        message = `${state.playerNames[playerId]} wins!`;
+      }
       return {
         ...state,
-        answers: newAnswers,
-        submitted: newSubmitted
+        winnerId,
+        message,
+        foul: null,
+        currentTurn: playerId,
+        turnPocketed: pocketedIds,
+        breakShot: false,
       };
     }
 
-    const ids = Object.keys(state.answers);
-    const a0 = newAnswers[ids[0]!] ?? [];
-    const a1 = newAnswers[ids[1]!] ?? [];
-    const currentA = a0[state.round] ?? "";
-    const currentB = a1[state.round] ?? "";
-    const score = matchScore(currentA, currentB);
-    const newRoundScores = [...state.roundScores, score];
-    const total = newRoundScores.reduce((s, v) => s + v, 0);
-    const maxPossible = (state.round + 1) * 10;
-    const compat = Math.round((total / maxPossible) * 100);
+    // Foul checks
+    if (cuePocketed) {
+      foul = "Scratch! Cue ball pocketed";
+    } else if (firstHit === null && !state.breakShot) {
+      foul = "Foul! No ball hit";
+    } else if (firstHit !== null && currentAssignment !== null && !state.breakShot) {
+      const isSolid = firstHit >= 1 && firstHit <= 7;
+      const isStripe = firstHit >= 9 && firstHit <= 15;
+      if (currentAssignment === "solids" && !isSolid) {
+        foul = "Foul! Must hit solid first";
+      } else if (currentAssignment === "stripes" && !isStripe) {
+        foul = "Foul! Must hit stripe first";
+      }
+    }
+
+    // Assign solids/stripes after break
+    if (state.breakShot && pocketedIds.length > 0 && !cuePocketed) {
+      const firstPocketed = pocketedIds.find((id) => id !== 0 && id !== 8);
+      if (firstPocketed !== undefined) {
+        if (firstPocketed >= 1 && firstPocketed <= 7) {
+          newAssignments = ["solids", "stripes"];
+        } else if (firstPocketed >= 9 && firstPocketed <= 15) {
+          newAssignments = ["stripes", "solids"];
+        }
+      }
+    }
+
+    // Determine if turn continues
+    if (!foul && pocketedIds.length > 0) {
+      const pocketedOwn = pocketedIds.some((id) => {
+        if (id === 0 || id === 8) return false;
+        if (newAssignments[currentPlayerIdx] === "solids") return id >= 1 && id <= 7;
+        if (newAssignments[currentPlayerIdx] === "stripes") return id >= 9 && id <= 15;
+        return true;
+      });
+      if (pocketedOwn) switchTurn = false;
+    }
+
+    if (foul) switchTurn = true;
+
+    const nextPlayer = switchTurn ? otherPlayer : playerId;
+
+    message = foul || `${state.playerNames[nextPlayer]}'s turn${!switchTurn ? " (continue)" : ""}`;
 
     return {
       ...state,
-      answers: newAnswers,
-      submitted: newSubmitted,
-      revealed: true,
-      roundScores: newRoundScores,
-      compatibilityScore: compat
+      currentTurn: nextPlayer,
+      assignments: newAssignments,
+      foul,
+      message,
+      breakShot: false,
+      turnPocketed: pocketedIds,
     };
   },
   checkGameOver(state) {
-    if (state.round >= ROUNDS - 1 && state.revealed) {
-      return { over: true };
-    }
+    if (state.winnerId) return { over: true, winnerId: state.winnerId };
     return { over: false };
   },
   getViewFor(state, playerId) {
-    const ids = Object.keys(state.answers);
-    const oppId = ids.find((id) => id !== playerId) ?? "";
-    const myAnswers = state.answers[playerId] ?? [];
-    const oppAnswers = state.answers[oppId] ?? [];
-    const mySubmitted = state.submitted[playerId] ?? false;
-    const oppSubmitted = state.submitted[oppId] ?? false;
-    const currentRound = state.round;
-
-    const myCurrent = myAnswers[currentRound] ?? null;
-    const oppCurrent = state.revealed ? (oppAnswers[currentRound] ?? null) : null;
-    const myPrevious = myAnswers.slice(0, currentRound);
-    const oppPrevious = state.revealed ? oppAnswers.slice(0, currentRound) : [];
-
+    const currentPlayerIdx = state.playerIds.indexOf(state.currentTurn);
+    const playerIdx = state.playerIds.indexOf(playerId);
     return {
-      round: currentRound,
-      totalRounds: ROUNDS,
-      prompt: state.prompts[currentRound] ?? "",
-      myAnswer: myCurrent,
-      opponentAnswer: oppCurrent,
-      mySubmitted,
-      opponentSubmitted: oppSubmitted,
-      revealed: state.revealed,
-      myPrevious,
-      opponentPrevious: oppPrevious,
-      roundScores: state.roundScores,
-      compatibilityScore: state.compatibilityScore,
-      waitingOn: !oppSubmitted ? "opponent" : !mySubmitted ? "you" : null
+      currentTurn: state.currentTurn,
+      isMyTurn: state.currentTurn === playerId,
+      assignments: state.assignments,
+      myAssignment: state.assignments[playerIdx],
+      foul: state.foul,
+      winnerId: state.winnerId,
+      message: state.message,
+      playerNames: state.playerNames,
+      playerIds: state.playerIds,
+      breakShot: state.breakShot,
     };
   }
 };

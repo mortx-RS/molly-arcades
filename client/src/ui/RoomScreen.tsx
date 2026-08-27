@@ -8,8 +8,8 @@ import { T } from "./theme";
 import { BottomDrawer } from "./BottomDrawer";
 import { ChessFullscreen } from "./ChessFullscreen";
 import type { ChessView } from "./ChessFullscreen";
-import { QuizFullscreen } from "./QuizFullscreen";
-import type { QuizView } from "./QuizFullscreen";
+import { PoolFullscreen } from "./PoolFullscreen";
+import type { PoolView } from "./PoolFullscreen";
 import { Crazy8Fullscreen } from "./Crazy8Fullscreen";
 import type { Crazy8View } from "./Crazy8Fullscreen";
 import { CrosswordFullscreen } from "./CrosswordFullscreen";
@@ -50,14 +50,14 @@ export function RoomScreen({ room, youId, gameState, gameOver, status, games, pr
     );
   }
 
-  if (isInProgress && room?.gameType === "quiz" && youId) {
+  if (isInProgress && room?.gameType === "pool" && youId) {
     return (
-      <QuizFullscreen
-        gameState={gameState as QuizView}
+      <PoolFullscreen
+        gameState={gameState as PoolView}
         youId={youId}
         gameOver={gameOver}
         room={room}
-        gameName={game?.name ?? "Compatibility Quiz"}
+        gameName={game?.name ?? "8-Ball Pool"}
         accent={accent}
         onLeave={onLeave}
         onSubmitAction={onSubmitAction}

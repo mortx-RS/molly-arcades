@@ -64,14 +64,14 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     estimatedMinutes: 5
   },
   {
-    id: "quiz",
-    name: "Compatibility Quiz",
+    id: "pool",
+    name: "8-Ball Pool",
     mode: "turn-based",
     minPlayers: 2,
     maxPlayers: 2,
-    tagline: "Answer privately, reveal together, score the match.",
-    icon: "💕",
-    estimatedMinutes: 3
+    tagline: "Classic billiards — sink all your balls then the 8.",
+    icon: "🎱",
+    estimatedMinutes: 10
   },
   {
     id: "crossword",
