@@ -185,7 +185,7 @@ export function HomeScreen({ games, initialCode, busy, profile, onCreate, onJoin
       </div>
 
       {/* Bottom action bar */}
-      <div style={{ flexShrink: 0, padding: "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))" }}>
+      <div style={{ flexShrink: 0, padding: "20px 16px", paddingBottom: "calc(20px + env(safe-area-inset-bottom, 0px))", borderTop: `1px solid ${T.lineStrong}`, background: `linear-gradient(to top, ${T.bg} 60%, transparent)` }}>
         {/* Join */}
         <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
           <input
