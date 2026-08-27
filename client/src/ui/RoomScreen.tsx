@@ -164,7 +164,7 @@ export function RoomScreen({ room, youId, gameState, gameOver, status, games, pr
   }
 
   return (
-    <main className="app" style={{ overflow: "hidden" }}>
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div className="topbar animate-in" style={{ flexShrink: 0, background: "rgba(8, 8, 15, 0.6)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${T.line}`, borderRadius: "0 0 20px 20px", padding: "12px 16px" }}>
         <button className="back-btn" aria-label="Leave room" onClick={onLeave} style={{ background: T.charcoal, borderColor: T.lineStrong, width: 44, height: 44, fontSize: 20 }}>&#8249;</button>
         <h1 className="room-title" style={{ fontSize: 18 }}>{game ? game.name : room?.id ?? "Room"}</h1>
@@ -173,7 +173,7 @@ export function RoomScreen({ room, youId, gameState, gameOver, status, games, pr
         </span>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 0" }}>
 
       {status === "reconnecting" && (
         <div className="banner animate-in" style={{ margin: "12px 16px 0", borderRadius: 12, background: T.yellowDim, borderColor: "rgba(221, 200, 48, 0.2)", animation: "slideDown 0.3s ease" }}>
@@ -429,7 +429,7 @@ export function RoomScreen({ room, youId, gameState, gameOver, status, games, pr
       </button>
 
       </div>
-    </main>
+    </div>
   );
 
   async function copy(kind: "code" | "link") {
