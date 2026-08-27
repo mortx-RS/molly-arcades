@@ -1150,7 +1150,7 @@ function Crazy8Fullscreen({ gameState, youId, gameOver, room, gameName, accent, 
 
       {/* Player hand */}
       <div style={{ padding: "8px 12px 16px", paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
-        <div style={{ display: "flex", justifyContent: "center", paddingBottom: 4, minHeight: 88 }}>
+        <div style={{ display: "flex", justifyContent: gameState.myHand.length > 8 ? "flex-start" : "center", overflowX: "auto", paddingBottom: 4, minHeight: 88, gap: gameState.myHand.length > 8 ? 0 : undefined }}>
           {gameState.myHand.map((card, i) => {
             const isSelected = selectedCardId === card.id;
             const is2WhenBlocked = mustDraw && card.rank !== "2";
@@ -1168,6 +1168,7 @@ function Crazy8Fullscreen({ gameState, youId, gameOver, room, gameName, accent, 
                 style={{
                   cursor: playable ? "pointer" : "default",
                   marginLeft: i === 0 ? 0 : -8,
+                  flexShrink: 0,
                   transform: isSelected
                     ? `translateY(-20px) rotate(0deg) scale(1.1)`
                     : `translateY(${translateY}px) rotate(${rotate}deg)`,
