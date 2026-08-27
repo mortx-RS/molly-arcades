@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import type { GameCatalogEntry } from "../../../shared/types";
 import type { Profile, Gender } from "../net/profile";
-import { getAvatarForGender, getAllColors } from "../net/profile";
+import { getAvatarForGender, getAvatarsForGender, getAllColors } from "../net/profile";
 import { T } from "./theme";
 import { BottomDrawer } from "./BottomDrawer";
 
@@ -242,7 +242,7 @@ export function HomeScreen({
     if (avatars.length <= 1) return;
     const next = (avatarIdx + 1) % avatars.length;
     setAvatarIdx(next);
-    setTempProfile({ ...tempProfile, avatar: avatars[next] });
+    setTempProfile({ ...tempProfile, avatar: avatars[next]! });
     vibrate(6);
   };
 

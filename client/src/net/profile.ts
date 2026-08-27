@@ -63,6 +63,10 @@ export function getAvatarForGender(gender: Gender): string {
   return AVATARS[gender];
 }
 
+export function getAvatarsForGender(gender: Gender): string[] {
+  return [AVATARS[gender]];
+}
+
 export function getAllColors(): readonly string[] {
   return COLORS;
 }
