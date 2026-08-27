@@ -59,6 +59,7 @@ interface Crazy8View {
   lastAction: { type: "play" | "draw" | "pass"; playerId: string; cardId?: string } | null;
   pendingDraw: number;
   direction: 1 | -1;
+  playableCardIds: string[];
 }
 
 interface CrosswordView {
@@ -1153,7 +1154,8 @@ function Crazy8Fullscreen({ gameState, youId, gameOver, room, gameName, accent, 
           {gameState.myHand.map((card, i) => {
             const isSelected = selectedCardId === card.id;
             const is2WhenBlocked = mustDraw && card.rank !== "2";
-            const playable = isMyTurn && !gameOver && !is2WhenBlocked;
+            const isPlayable = gameState.playableCardIds.includes(card.id);
+            const playable = isMyTurn && !gameOver && !is2WhenBlocked && isPlayable;
             const total = gameState.myHand.length;
             const offset = i - (total - 1) / 2;
             const rotate = offset * (total > 6 ? 4 : 5);

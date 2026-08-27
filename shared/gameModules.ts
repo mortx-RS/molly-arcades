@@ -518,8 +518,12 @@ export const crazy8Module: GameModule<Crazy8State, Crazy8Action> = {
     const opponents = state.playerIds
       .filter((id) => id !== playerId)
       .map((id) => ({ id, name: state.playerNames[id] ?? "Player", cardCount: (state.hands[id] ?? []).length }));
+    const myHand = (state.hands[playerId] ?? []);
+    const playableCardIds = myHand
+      .filter((c) => canPlay(c, state.topCard, state.wildSuit))
+      .map((c) => cardId(c));
     return {
-      myHand: (state.hands[playerId] ?? []).map((c) => ({ id: cardId(c), suit: c.suit, rank: c.rank })),
+      myHand: myHand.map((c) => ({ id: cardId(c), suit: c.suit, rank: c.rank })),
       opponents,
       topCard: { id: cardId(state.topCard), suit: state.topCard.suit, rank: state.topCard.rank },
       wildSuit: state.wildSuit,
@@ -532,6 +536,7 @@ export const crazy8Module: GameModule<Crazy8State, Crazy8Action> = {
       lastAction: state.lastAction,
       pendingDraw: state.pendingDraw,
       direction: state.direction,
+      playableCardIds,
     };
   }
 };
