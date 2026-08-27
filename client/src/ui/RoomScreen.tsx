@@ -529,8 +529,8 @@ function ChessFullscreen({ gameState, youId, gameOver, room, gameName, accent, o
           : isLastMove
             ? `${accent}12`
             : isDark
-              ? "#1a1a2e"
-              : "#2a2a3e";
+              ? "#2a2a3e"
+              : "#4a4a5e";
 
         cells.push(
           <div
@@ -561,9 +561,12 @@ function ChessFullscreen({ gameState, youId, gameOver, room, gameName, accent, o
                 <span style={{
                   fontSize: "min(9vw, 48px)",
                   lineHeight: 1,
-                  color: piece.color === "w" ? "#ffffff" : "#1a1a2e",
-                  textShadow: piece.color === "w" ? "0 1px 3px rgba(0,0,0,0.4)" : "0 1px 2px rgba(255,255,255,0.1)",
-                  filter: piece.color === gameState.myColor ? "drop-shadow(0 1px 2px rgba(0,0,0,0.5))" : "none",
+                  color: piece.color === "w" ? "#f0f0f0" : "#1c1c1c",
+                  WebkitTextStroke: piece.color === "w" ? "1px rgba(0,0,0,0.15)" : "1px rgba(255,255,255,0.08)",
+                  textShadow: piece.color === "w"
+                    ? "0 2px 4px rgba(0,0,0,0.5), 0 0 8px rgba(255,255,255,0.1)"
+                    : "0 2px 4px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)",
+                  filter: piece.color === gameState.myColor ? "drop-shadow(0 2px 3px rgba(0,0,0,0.5))" : "none",
                   position: "relative",
                   zIndex: 2,
                   userSelect: "none"
