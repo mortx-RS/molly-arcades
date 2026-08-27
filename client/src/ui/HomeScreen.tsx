@@ -720,7 +720,7 @@ export function HomeScreen({
                 spellCheck={false}
                 onChange={(e) =>
                   setCode(
-                    e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""),
+                    e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""),
                   )
                 }
                 onKeyDown={handleCodeKey}
