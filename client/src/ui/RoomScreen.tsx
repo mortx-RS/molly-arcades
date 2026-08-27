@@ -548,11 +548,12 @@ function ChessFullscreen({ gameState, youId, gameOver, room, gameName, accent, o
             <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
               {isLegalTarget && (
                 <div style={{
-                  width: piece ? "80%" : "30%",
-                  height: piece ? "80%" : "30%",
-                  borderRadius: piece ? "8px" : "50%",
-                  background: piece ? "transparent" : `${T.green}55`,
-                  border: piece ? "3px solid rgba(232, 0, 92, 0.5)" : "none",
+                  width: piece ? "85%" : "30%",
+                  height: piece ? "85%" : "30%",
+                  borderRadius: piece ? "10px" : "50%",
+                  background: piece ? `${T.pink}20` : `${T.green}55`,
+                  border: piece ? `3px solid ${T.pink}` : "none",
+                  boxShadow: piece ? `0 0 12px ${T.pink}60, inset 0 0 8px ${T.pink}30` : "none",
                   position: "absolute",
                   zIndex: 1
                 }} />
