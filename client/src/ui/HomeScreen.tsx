@@ -204,7 +204,7 @@ export function HomeScreen({ games, initialCode, busy, profile, onCreate, onJoin
             disabled={!canJoin}
             onClick={() => onJoin(code.trim(), profile.name)}
             style={{
-              padding: "16px 28px",
+              padding: "12px 24px",
               ...T.btn,
               ...T.btnPrimary(profile.color),
               cursor: canJoin ? "pointer" : "default",

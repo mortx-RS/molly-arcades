@@ -1,10 +1,6 @@
-const CACHE_NAME = "molly-arcade-v1";
-const STATIC_ASSETS = ["/", "/index.html"];
+const CACHE_NAME = "molly-arcade-v2";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
   self.skipWaiting();
 });
 
@@ -20,29 +16,55 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+  const { request } = event;
+  if (request.method !== "GET") return;
+  if (request.url.includes("/ws") || request.url.includes("/api")) return;
 
-  // Skip WebSocket and API requests
-  if (event.request.url.includes("/ws") || event.request.url.includes("/api")) {
+  const url = new URL(request.url);
+
+  // Navigation: network first, fallback to cache
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          return response;
+        })
+        .catch(() => caches.match("/"))
+    );
     return;
   }
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Cache successful responses
-        if (response.ok) {
+  // Static assets (hashed filenames from Vite): cache first
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
+          caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          return response;
+        });
       })
-      .catch(() => {
-        // Fallback to cache for navigation requests
-        if (event.request.mode === "navigate") {
-          return caches.match("/");
-        }
-        return new Response("Offline", { status: 503 });
-      })
+    );
+    return;
+  }
+
+  // Everything else: stale-while-revalidate
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      const fetchPromise = fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => cached);
+
+      return cached || fetchPromise;
+    })
   );
 });

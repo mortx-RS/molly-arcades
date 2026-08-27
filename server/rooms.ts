@@ -17,9 +17,9 @@ const envNum = (key: string, dflt: number): number => {
   return Number.isFinite(v) && v > 0 ? v : dflt;
 };
 
-const SEAT_GRACE_MS = envNum("SEAT_GRACE_MS", 60_000);
-const ROOM_TTL_MS = envNum("ROOM_TTL_MS", 30 * 60_000);
-const EMPTY_ROOM_TTL_MS = envNum("EMPTY_ROOM_TTL_MS", 5 * 60_000);
+const SEAT_GRACE_MS = envNum("SEAT_GRACE_MS", 5 * 60_000);
+const ROOM_TTL_MS = envNum("ROOM_TTL_MS", 60 * 60_000);
+const EMPTY_ROOM_TTL_MS = envNum("EMPTY_ROOM_TTL_MS", 10 * 60_000);
 const SWEEP_INTERVAL_MS = envNum("SWEEP_INTERVAL_MS", 30_000);
 const HEARTBEAT_INTERVAL_MS = envNum("HEARTBEAT_INTERVAL_MS", 15_000);
 const MAX_MESSAGE_BYTES = 16_384;

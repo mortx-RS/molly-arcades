@@ -101,11 +101,13 @@ export function useRoom(): RoomApi {
     window.addEventListener("focus", poke);
     window.addEventListener("online", poke);
     window.addEventListener("pageshow", poke);
+    window.addEventListener("resume", poke);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", poke);
       window.removeEventListener("online", poke);
       window.removeEventListener("pageshow", poke);
+      window.removeEventListener("resume", poke);
     };
   }, []);
 

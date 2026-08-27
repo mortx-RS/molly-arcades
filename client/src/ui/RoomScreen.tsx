@@ -164,7 +164,7 @@ export function RoomScreen({ room, youId, gameState, gameOver, status, games, pr
   }
 
   return (
-    <main className="app">
+    <main className="app" style={{ overflowY: "auto" }}>
       <div className="topbar animate-in" style={{ background: "rgba(8, 8, 15, 0.6)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${T.line}`, borderRadius: "0 0 20px 20px", padding: "12px 16px" }}>
         <button className="back-btn" aria-label="Leave room" onClick={onLeave} style={{ background: T.charcoal, borderColor: T.lineStrong, width: 44, height: 44, fontSize: 20 }}>&#8249;</button>
         <h1 className="room-title" style={{ fontSize: 18 }}>{game ? game.name : room?.id ?? "Room"}</h1>
@@ -335,7 +335,7 @@ export function RoomScreen({ room, youId, gameState, gameOver, status, games, pr
                 style={{
                   flex: 1,
                   minWidth: 200,
-                  padding: "16px 28px",
+                  padding: "14px 24px",
                   fontSize: 15,
                   fontWeight: 700,
                   letterSpacing: "0.02em",
