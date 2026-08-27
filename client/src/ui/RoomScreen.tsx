@@ -510,8 +510,8 @@ function ChessFullscreen({ gameState, youId, gameOver, room, gameName, accent, o
     const cells = [];
     for (let ri = 0; ri < 8; ri++) {
       for (let ci = 0; ci < 8; ci++) {
-        const r = flipBoard ? 7 - ri : ri;
-        const c = flipBoard ? 7 - ci : ci;
+        const r = flipBoard ? ri : 7 - ri;
+        const c = flipBoard ? ci : 7 - ci;
         const isDark = (r + c) % 2 === 1;
         const isSelected = selected && selected[0] === r && selected[1] === c;
         const isLastMove = gameState.lastMove && (
@@ -561,6 +561,8 @@ function ChessFullscreen({ gameState, youId, gameOver, room, gameName, accent, o
                 <span style={{
                   fontSize: "min(9vw, 48px)",
                   lineHeight: 1,
+                  color: piece.color === "w" ? "#ffffff" : "#1a1a2e",
+                  textShadow: piece.color === "w" ? "0 1px 3px rgba(0,0,0,0.4)" : "0 1px 2px rgba(255,255,255,0.1)",
                   filter: piece.color === gameState.myColor ? "drop-shadow(0 1px 2px rgba(0,0,0,0.5))" : "none",
                   position: "relative",
                   zIndex: 2,
