@@ -2122,7 +2122,7 @@ export function PoolFullscreen({ gameState, youId, gameOver, gameName, accent, o
       }
     }
 
-    ballsRef.current = pb.frames[Math.max(0, Math.min(pb.frames.length - 1, Math.floor(pb.t)))];
+    ballsRef.current = pb.frames[Math.max(0, Math.min(pb.frames.length - 1, Math.floor(pb.t)))]!;
     if (pb.t >= pb.frames.length - 1) finishPlayback(false);
   }, [finishPlayback]);
 
