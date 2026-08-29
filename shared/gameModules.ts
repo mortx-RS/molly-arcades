@@ -106,7 +106,8 @@ export const archeryModule: GameModule<ArcheryState, ArcheryAction> = {
 };
 
 export type PoolAction =
-  | { type: "turn_result"; pocketedIds: number[]; cuePocketed: boolean; firstHit: number | null }
+  | { type: "shoot"; angle: number; power: number }
+  | { type: "shot_result"; pocketedIds: number[]; cuePocketed: boolean; firstHit: number | null; finalPositions: { id: number; x: number; y: number; pocketed: boolean }[] }
   | { type: "place_cue"; x: number; y: number };
 
 export interface PoolState {
@@ -119,6 +120,8 @@ export interface PoolState {
   winnerId: string | null;
   message: string;
   breakShot: boolean;
+  ballPositions: { id: number; x: number; y: number; pocketed: boolean }[];
+  incomingShot: { angle: number; power: number } | null;
 }
 
 export const poolModule: GameModule<PoolState, PoolAction> = {
@@ -137,118 +140,134 @@ export const poolModule: GameModule<PoolState, PoolAction> = {
       winnerId: null,
       message: `${players[0]!.name}'s break`,
       breakShot: true,
+      ballPositions: [],
+      incomingShot: null,
     };
   },
   reduce(state, playerId, action: PoolAction) {
     if (state.winnerId) return state;
-    if (state.currentTurn !== playerId) return state;
-    if (state.foul === "placing-cue") return state;
 
-    const otherPlayer = state.playerIds[0] === playerId ? state.playerIds[1]! : state.playerIds[0]!;
-    const currentPlayerIdx = state.playerIds.indexOf(playerId);
-    const otherPlayerIdx = state.playerIds.indexOf(otherPlayer);
-
-    if (action.type === "place_cue") {
+    if (action.type === "shoot") {
+      if (state.currentTurn !== playerId) return state;
       return {
         ...state,
+        incomingShot: { angle: action.angle, power: action.power },
+      };
+    }
+
+    if (action.type === "place_cue") {
+      if (state.currentTurn !== playerId) return state;
+      const newPositions = state.ballPositions.map((b) =>
+        b.id === 0 ? { ...b, x: action.x, y: action.y, pocketed: false } : b
+      );
+      return {
+        ...state,
+        ballPositions: newPositions.length > 0 ? newPositions : state.ballPositions,
         foul: null,
+        incomingShot: null,
         message: `${state.playerNames[playerId]}'s turn`,
       };
     }
 
-    const { pocketedIds, cuePocketed, firstHit } = action;
-    const currentAssignment = state.assignments[currentPlayerIdx];
-    let newAssignments = [...state.assignments] as [string | null, string | null];
-    let foul: string | null = null;
-    let switchTurn = true;
-    let winnerId: string | null = null;
-    let message = "";
+    if (action.type === "shot_result") {
+      if (state.currentTurn !== playerId) return state;
 
-    // Check 8-ball pocketed
-    if (pocketedIds.includes(8)) {
-      const hasAssignment = currentAssignment !== null;
-      const allOwnPocketed = hasAssignment
-        ? pocketedIds.filter((id) => id !== 0 && id !== 8).length >= 7
-        : false;
+      const { pocketedIds, cuePocketed, firstHit, finalPositions } = action;
+      const currentPlayerIdx = state.playerIds.indexOf(playerId);
+      const otherPlayer = state.playerIds[0] === playerId ? state.playerIds[1]! : state.playerIds[0]!;
+      const currentAssignment = state.assignments[currentPlayerIdx];
+      let newAssignments = [...state.assignments] as [string | null, string | null];
+      let foul: string | null = null;
+      let switchTurn = true;
+      let winnerId: string | null = null;
+      let message = "";
 
-      if (!hasAssignment || cuePocketed || !allOwnPocketed) {
-        winnerId = otherPlayer;
-        message = `${state.playerNames[otherPlayer]} wins! (${state.playerNames[playerId]} sank the 8-ball illegally)`;
-      } else {
-        winnerId = playerId;
-        message = `${state.playerNames[playerId]} wins!`;
+      if (pocketedIds.includes(8)) {
+        const hasAssignment = currentAssignment !== null;
+        const allOwnPocketed = hasAssignment
+          ? pocketedIds.filter((id) => id !== 0 && id !== 8).length >= 7
+          : false;
+
+        if (!hasAssignment || cuePocketed || !allOwnPocketed) {
+          winnerId = otherPlayer;
+          message = `${state.playerNames[otherPlayer]} wins! (${state.playerNames[playerId]} sank the 8-ball illegally)`;
+        } else {
+          winnerId = playerId;
+          message = `${state.playerNames[playerId]} wins!`;
+        }
+        return {
+          ...state,
+          winnerId,
+          message,
+          foul: null,
+          currentTurn: playerId,
+          turnPocketed: pocketedIds,
+          breakShot: false,
+          ballPositions: finalPositions,
+          incomingShot: null,
+        };
       }
+
+      if (cuePocketed) {
+        foul = "Scratch! Cue ball pocketed";
+      } else if (firstHit === null && !state.breakShot) {
+        foul = "Foul! No ball hit";
+      } else if (firstHit !== null && currentAssignment !== null && !state.breakShot) {
+        const isSolid = firstHit >= 1 && firstHit <= 7;
+        const isStripe = firstHit >= 9 && firstHit <= 15;
+        if (currentAssignment === "solids" && !isSolid) {
+          foul = "Foul! Must hit solid first";
+        } else if (currentAssignment === "stripes" && !isStripe) {
+          foul = "Foul! Must hit stripe first";
+        }
+      }
+
+      if (state.breakShot && pocketedIds.length > 0 && !cuePocketed) {
+        const firstPocketed = pocketedIds.find((id) => id !== 0 && id !== 8);
+        if (firstPocketed !== undefined) {
+          if (firstPocketed >= 1 && firstPocketed <= 7) {
+            newAssignments = ["solids", "stripes"];
+          } else if (firstPocketed >= 9 && firstPocketed <= 15) {
+            newAssignments = ["stripes", "solids"];
+          }
+        }
+      }
+
+      if (!foul && pocketedIds.length > 0) {
+        const pocketedOwn = pocketedIds.some((id) => {
+          if (id === 0 || id === 8) return false;
+          if (newAssignments[currentPlayerIdx] === "solids") return id >= 1 && id <= 7;
+          if (newAssignments[currentPlayerIdx] === "stripes") return id >= 9 && id <= 15;
+          return true;
+        });
+        if (pocketedOwn) switchTurn = false;
+      }
+
+      if (foul) switchTurn = true;
+
+      const nextPlayer = switchTurn ? otherPlayer : playerId;
+      message = foul || `${state.playerNames[nextPlayer]}'s turn${!switchTurn ? " (continue)" : ""}`;
+
       return {
         ...state,
-        winnerId,
+        currentTurn: nextPlayer,
+        assignments: newAssignments,
+        foul,
         message,
-        foul: null,
-        currentTurn: playerId,
-        turnPocketed: pocketedIds,
         breakShot: false,
+        turnPocketed: pocketedIds,
+        ballPositions: finalPositions,
+        incomingShot: null,
       };
     }
 
-    // Foul checks
-    if (cuePocketed) {
-      foul = "Scratch! Cue ball pocketed";
-    } else if (firstHit === null && !state.breakShot) {
-      foul = "Foul! No ball hit";
-    } else if (firstHit !== null && currentAssignment !== null && !state.breakShot) {
-      const isSolid = firstHit >= 1 && firstHit <= 7;
-      const isStripe = firstHit >= 9 && firstHit <= 15;
-      if (currentAssignment === "solids" && !isSolid) {
-        foul = "Foul! Must hit solid first";
-      } else if (currentAssignment === "stripes" && !isStripe) {
-        foul = "Foul! Must hit stripe first";
-      }
-    }
-
-    // Assign solids/stripes after break
-    if (state.breakShot && pocketedIds.length > 0 && !cuePocketed) {
-      const firstPocketed = pocketedIds.find((id) => id !== 0 && id !== 8);
-      if (firstPocketed !== undefined) {
-        if (firstPocketed >= 1 && firstPocketed <= 7) {
-          newAssignments = ["solids", "stripes"];
-        } else if (firstPocketed >= 9 && firstPocketed <= 15) {
-          newAssignments = ["stripes", "solids"];
-        }
-      }
-    }
-
-    // Determine if turn continues
-    if (!foul && pocketedIds.length > 0) {
-      const pocketedOwn = pocketedIds.some((id) => {
-        if (id === 0 || id === 8) return false;
-        if (newAssignments[currentPlayerIdx] === "solids") return id >= 1 && id <= 7;
-        if (newAssignments[currentPlayerIdx] === "stripes") return id >= 9 && id <= 15;
-        return true;
-      });
-      if (pocketedOwn) switchTurn = false;
-    }
-
-    if (foul) switchTurn = true;
-
-    const nextPlayer = switchTurn ? otherPlayer : playerId;
-
-    message = foul || `${state.playerNames[nextPlayer]}'s turn${!switchTurn ? " (continue)" : ""}`;
-
-    return {
-      ...state,
-      currentTurn: nextPlayer,
-      assignments: newAssignments,
-      foul,
-      message,
-      breakShot: false,
-      turnPocketed: pocketedIds,
-    };
+    return state;
   },
   checkGameOver(state) {
     if (state.winnerId) return { over: true, winnerId: state.winnerId };
     return { over: false };
   },
   getViewFor(state, playerId) {
-    const currentPlayerIdx = state.playerIds.indexOf(state.currentTurn);
     const playerIdx = state.playerIds.indexOf(playerId);
     return {
       currentTurn: state.currentTurn,
@@ -261,6 +280,8 @@ export const poolModule: GameModule<PoolState, PoolAction> = {
       playerNames: state.playerNames,
       playerIds: state.playerIds,
       breakShot: state.breakShot,
+      ballPositions: state.ballPositions,
+      incomingShot: state.currentTurn !== playerId ? state.incomingShot : null,
     };
   }
 };
