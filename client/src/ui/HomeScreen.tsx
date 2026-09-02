@@ -1,17 +1,8 @@
-import { useState, useCallback, useRef, useMemo } from "react";
-import type { GameCatalogEntry } from "../../../shared/types";
+import { useState, useMemo } from "react";
 import type { Profile, Gender } from "../net/profile";
 import { getAvatarForGender, getAvatarsForGender, getAllColors } from "../net/profile";
 import { T } from "./theme";
 import { BottomDrawer } from "./BottomDrawer";
-
-const GAME_ICONS: Record<string, string> = {
-  chess: "\u265F\uFE0F",
-  crazy8: "\uD83C\uDCCF",
-  quiz: "\uD83D\uDC95",
-  crossword: "\uD83E\uDDE9",
-};
-const FALLBACK_ICON = "\uD83C\uDFAE";
 
 const GENDER_OPTIONS: { value: Gender; label: string; icon: string }[] = [
   { value: "male", label: "Male", icon: "\uD83D\uDC66" },
@@ -29,11 +20,10 @@ function vibrate(ms: number) {
 }
 
 interface Props {
-  games: GameCatalogEntry[];
   initialCode: string;
   busy: boolean;
   profile: Profile;
-  onCreate(gameType: string, name: string): void;
+  onCreate(name: string): void;
   onJoin(code: string, name: string): void;
   onProfileChange(profile: Profile): void;
 }
@@ -155,7 +145,6 @@ function MetaChip({ children }: { children: React.ReactNode }) {
 /* ---------- Main component ---------- */
 
 export function HomeScreen({
-  games,
   initialCode,
   busy,
   profile,
@@ -163,55 +152,14 @@ export function HomeScreen({
   onJoin,
   onProfileChange,
 }: Props) {
-  const [gameId, setGameId] = useState(games[0]?.id ?? "");
   const [code, setCode] = useState(initialCode);
   const [editingProfile, setEditingProfile] = useState(false);
   const [tempProfile, setTempProfile] = useState<Profile>(profile);
   const [avatarIdx, setAvatarIdx] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const cardRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
-  const prefersReduced = useMemo(
-    () =>
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
-    [],
-  );
-
-  const canCreate = !busy && gameId !== "" && profile.name.trim().length > 0;
+  const canCreate = !busy && profile.name.trim().length > 0;
   const canJoin =
     !busy && code.trim().length >= 4 && profile.name.trim().length > 0;
-  const selectedGame = games.find((g) => g.id === gameId);
-
-  const selectGame = (id: string) => {
-    if (id === gameId) return;
-    setGameId(id);
-    vibrate(8);
-    if (!prefersReduced) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          cardRefs.current
-            .get(id)
-            ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        });
-      });
-    }
-  };
-
-  const handleTilt = useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (prefersReduced) return;
-      const el = e.currentTarget;
-      const r = el.getBoundingClientRect();
-      const x = (e.clientX - r.left) / r.width - 0.5;
-      const y = (e.clientY - r.top) / r.height - 0.5;
-      el.style.transform = `perspective(800px) rotateY(${x * 4}deg) rotateX(${-y * 4}deg)`;
-    },
-    [prefersReduced],
-  );
-
-  const resetTilt = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
-    e.currentTarget.style.transform = "";
-  }, []);
 
   const openProfile = () => {
     setTempProfile(profile);
@@ -402,286 +350,97 @@ export function HomeScreen({
         </div>
       </div>
 
-      {/* Main scrollable content */}
+      {/* Main content */}
       <div
-        ref={scrollRef}
-        className="ma-scroll"
         style={{
           flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-          padding: "24px 20px 16px",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          padding: "24px 20px",
           position: "relative",
           zIndex: 1,
         }}
       >
-        {/* Games section */}
-        <div>
-          <div
+        {/* Create Room section */}
+        <div className="ma-in" style={{ marginBottom: 24 }}>
+          <button
+            disabled={!canCreate}
+            onClick={() => {
+              vibrate(12);
+              onCreate(profile.name);
+            }}
+            className="ma-press"
             style={{
+              width: "100%",
+              padding: "18px 24px",
+              borderRadius: 16,
+              border: `1.5px solid ${canCreate ? `${profile.color}40` : T.line}`,
+              background: canCreate
+                ? `linear-gradient(135deg, ${profile.color}15 0%, ${profile.color}05 100%)`
+                : T.charcoal,
+              cursor: canCreate ? "pointer" : "default",
+              fontSize: 16,
+              fontWeight: 700,
+              color: canCreate ? profile.color : T.chalkMuted,
               display: "flex",
               alignItems: "center",
+              justifyContent: "center",
               gap: 12,
-              marginBottom: 16,
+              transition: "all 0.2s ease",
+              boxShadow: canCreate ? `0 4px 24px ${profile.color}20` : "none",
             }}
           >
-            <h2
-              style={{
-                fontFamily: T.fontDisplay,
-                fontSize: 11,
-                fontWeight: 700,
-                color: T.chalkMuted,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                margin: 0,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Games
-            </h2>
-            <div style={{ flex: 1, height: 1, background: T.line }} />
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {games.map((g, idx) => {
-              const selected = g.id === gameId;
-              const icon = GAME_ICONS[g.id] ?? FALLBACK_ICON;
-              return (
-                <button
-                  key={g.id}
-                  ref={(el) => {
-                    if (el) cardRefs.current.set(g.id, el);
-                    else cardRefs.current.delete(g.id);
-                  }}
-                  onClick={() => selectGame(g.id)}
-                  onPointerMove={!selected ? handleTilt : undefined}
-                  onPointerLeave={!selected ? resetTilt : undefined}
-                  className="ma-press ma-in"
-                  style={{
-                    width: "100%",
-                    padding: 0,
-                    borderRadius: 16,
-                    border: `1.5px solid ${selected ? profile.color : T.line}`,
-                    background: selected
-                      ? `linear-gradient(135deg, ${profile.color}10 0%, ${T.charcoal} 100%)`
-                      : T.charcoal,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    animationDelay: `${0.05 * idx}s`,
-                    overflow: "hidden",
-                    boxShadow: selected
-                      ? `0 8px 32px ${profile.color}20, 0 2px 8px rgba(0,0,0,0.2)`
-                      : "0 2px 8px rgba(0,0,0,0.15)",
-                    transition: "border-color 0.2s ease, box-shadow 0.2s ease",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 14,
-                      padding: selected ? "16px 18px 12px" : "16px 18px",
-                      transition: "padding 0.2s ease",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 52,
-                        height: 52,
-                        borderRadius: 14,
-                        background: selected
-                          ? `${profile.color}15`
-                          : `${T.chalk}06`,
-                        border: selected
-                          ? `1px solid ${profile.color}20`
-                          : `1px solid ${T.line}`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 28,
-                        flexShrink: 0,
-                        transition: "all 0.2s ease",
-                      }}
-                    >
-                      {icon}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontFamily: T.fontDisplay,
-                          fontSize: selected ? 18 : 16,
-                          fontWeight: 700,
-                          color: selected ? profile.color : T.chalk,
-                          transition: "color 0.2s ease",
-                          marginBottom: 2,
-                        }}
-                      >
-                        {g.name}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: T.chalkMuted,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          lineHeight: 1.3,
-                        }}
-                      >
-                        {g.tagline}
-                      </div>
-                    </div>
-                    {selected ? (
-                      <span
-                        className="ma-pop"
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: "50%",
-                          background: profile.color,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Check color={T.bg} />
-                      </span>
-                    ) : (
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke={T.chalkMuted}
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{ flexShrink: 0, opacity: 0.4 }}
-                      >
-                        <polyline points="9 18 15 12 9 6" />
-                      </svg>
-                    )}
-                  </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateRows: selected ? "1fr" : "0fr",
-                      transition:
-                        "grid-template-rows 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
-                    }}
-                  >
-                    <div style={{ overflow: "hidden" }}>
-                      <div
-                        className="ma-expand"
-                        style={{ padding: "0 18px 16px" }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 6,
-                            flexWrap: "wrap",
-                            marginBottom: 12,
-                          }}
-                        >
-                          <MetaChip>
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                              <circle cx="9" cy="7" r="4" />
-                              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </svg>
-                            {g.minPlayers}-{g.maxPlayers}
-                          </MetaChip>
-                          <MetaChip>
-                            <svg
-                              width="12"
-                              height="12"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <circle cx="12" cy="12" r="10" />
-                              <polyline points="12 6 12 12 16 14" />
-                            </svg>
-                            {g.estimatedMinutes}m
-                          </MetaChip>
-                          <MetaChip>
-                            {g.mode === "realtime"
-                              ? "⚡ Realtime"
-                              : "⏱ Turn-based"}
-                          </MetaChip>
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: 8,
-                            padding: "10px 12px",
-                            background: `${profile.color}08`,
-                            borderRadius: 10,
-                            border: `1px solid ${profile.color}15`,
-                          }}
-                        >
-                          <Check color={profile.color} />
-                          <span
-                            style={{
-                              fontFamily: T.fontDisplay,
-                              fontSize: 12,
-                              fontWeight: 600,
-                              color: profile.color,
-                              letterSpacing: "0.02em",
-                            }}
-                          >
-                            Selected — tap Create
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+            {busy ? (
+              <Spinner size={18} color={profile.color} />
+            ) : (
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            )}
+            {busy ? "Creating..." : "Create Room"}
+          </button>
         </div>
-      </div>
 
-      {/* Bottom action bar */}
-      <div
-        style={{
-          flexShrink: 0,
-          padding: "16px 20px",
-          paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
-          background: `linear-gradient(to top, ${T.bg} 60%, transparent)`,
-          position: "relative",
-          zIndex: 2,
-        }}
-      >
+        {/* Divider */}
         <div
+          className="ma-in"
           style={{
-            background: T.charcoal,
-            borderRadius: 20,
-            border: `1.5px solid ${T.line}`,
-            padding: 16,
-            boxShadow: "0 -8px 32px rgba(0,0,0,0.15)",
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            marginBottom: 24,
+            animationDelay: "0.1s",
           }}
         >
-          {/* Join row */}
-          <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          <div style={{ flex: 1, height: 1, background: T.line }} />
+          <span
+            style={{
+              fontSize: 12,
+              color: T.chalkMuted,
+              fontFamily: T.fontMono,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+            }}
+          >
+            or join
+          </span>
+          <div style={{ flex: 1, height: 1, background: T.line }} />
+        </div>
+
+        {/* Join Room section */}
+        <div className="ma-in" style={{ animationDelay: "0.15s" }}>
+          <div style={{ display: "flex", gap: 10 }}>
             <div
               style={{
                 flex: 1,
@@ -690,7 +449,7 @@ export function HomeScreen({
                 alignItems: "center",
                 gap: 10,
                 padding: "0 14px",
-                background: T.bg,
+                background: T.charcoal,
                 border: `1.5px solid ${code.trim().length >= 4 ? `${profile.color}40` : T.line}`,
                 borderRadius: 12,
                 transition: "border-color 0.2s ease",
@@ -727,7 +486,7 @@ export function HomeScreen({
                 style={{
                   flex: 1,
                   minWidth: 0,
-                  padding: "13px 0",
+                  padding: "14px 0",
                   background: "transparent",
                   border: "none",
                   color: T.chalk,
@@ -806,49 +565,6 @@ export function HomeScreen({
               Join
             </button>
           </div>
-
-          {/* Create */}
-          <button
-            disabled={!canCreate}
-            onClick={() => {
-              vibrate(12);
-              onCreate(gameId, profile.name);
-            }}
-            className="ma-press"
-            style={{
-              width: "100%",
-              padding: "14px",
-              ...T.btn,
-              ...(canCreate
-                ? {
-                    background: `${profile.color}12`,
-                    color: profile.color,
-                    border: `1.5px solid ${profile.color}30`,
-                  }
-                : {
-                    background: T.bg,
-                    color: T.chalkMuted,
-                    border: `1.5px solid ${T.line}`,
-                  }),
-              cursor: canCreate ? "pointer" : "default",
-              fontSize: 14,
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              letterSpacing: "0.01em",
-            }}
-          >
-            {busy ? (
-              <Spinner size={14} color={profile.color} />
-            ) : (
-              <span style={{ fontSize: 16, lineHeight: 1 }}>
-                {GAME_ICONS[gameId] ?? FALLBACK_ICON}
-              </span>
-            )}
-            {busy ? "Creating..." : `Create ${selectedGame?.name ?? ""} Room`}
-          </button>
         </div>
       </div>
 

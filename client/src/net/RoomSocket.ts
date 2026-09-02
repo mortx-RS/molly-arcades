@@ -1,5 +1,5 @@
 import type { AckResult, ClientMessage, CreatedRoomPayload, JoinedRoomPayload, ServerMessage } from "../../../shared/protocol";
-import type { Room } from "../../../shared/types";
+import type { Room, RoundScore, Player, GameSession } from "../../../shared/types";
 import type { Session } from "./session";
 
 export type SockStatus = "idle" | "connecting" | "open" | "reconnecting";
@@ -10,6 +10,8 @@ export interface SocketListener {
   onRoomClosed(reason: string): void;
   onGameState(state: unknown, you: string): void;
   onGameOver(winnerId?: string): void;
+  onRoundComplete(roundNumber: number, scores: RoundScore[], cumulative: Player[]): void;
+  onSessionOver(session: GameSession, scoreboard: Player[]): void;
   onSessionDead(reason: string): void;
   onError(message: string): void;
   onStatus(status: SockStatus): void;
@@ -245,6 +247,12 @@ export class RoomSocket {
         return;
       case "game:over":
         if (this.attached) this.listener.onGameOver(msg.winnerId);
+        return;
+      case "round:complete":
+        if (this.attached) this.listener.onRoundComplete(msg.roundNumber, msg.scores, msg.cumulative);
+        return;
+      case "game:session_over":
+        if (this.attached) this.listener.onSessionOver(msg.session, msg.scoreboard);
         return;
       case "room:closed": {
         this.running = false;

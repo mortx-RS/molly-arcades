@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AckResult, ClientMessage, CreatedRoomPayload, JoinedRoomPayload } from "../../../shared/protocol";
-import type { Room } from "../../../shared/types";
+import type { Room, RoundScore, Player, GameSession } from "../../../shared/types";
 import { RoomSocket, type SockStatus } from "./RoomSocket";
 import { clearSession, loadSession, saveSession, type Session } from "./session";
 
@@ -12,14 +12,22 @@ interface RoomApi {
   you: string | null;
   gameState: unknown;
   gameOver: { winnerId?: string } | null;
+  roundComplete: { roundNumber: number; scores: RoundScore[]; cumulative: Player[] } | null;
+  sessionOver: { session: GameSession; scoreboard: Player[] } | null;
   status: NetStatus;
   notice: string | null;
   dismissNotice(): void;
-  createRoom(gameType: string, playerName: string): Promise<boolean>;
+  clearRoundComplete(): void;
+  clearSessionOver(): void;
+  createRoom(playerName: string): Promise<boolean>;
   joinRoom(roomCode: string, playerName: string): Promise<boolean>;
   leaveRoom(): void;
+  selectGame(gameId: string): void;
   startGame(): void;
   submitAction(action: unknown): void;
+  finishRound(scores: RoundScore[]): void;
+  rematch(): void;
+  newGame(gameId: string): void;
 }
 
 export function useRoom(): RoomApi {
@@ -30,6 +38,8 @@ export function useRoom(): RoomApi {
   const [notice, setNotice] = useState<string | null>(null);
   const [gameState, setGameState] = useState<unknown>(null);
   const [gameOver, setGameOver] = useState<{ winnerId?: string } | null>(null);
+  const [roundComplete, setRoundComplete] = useState<{ roundNumber: number; scores: RoundScore[]; cumulative: Player[] } | null>(null);
+  const [sessionOver, setSessionOver] = useState<{ session: GameSession; scoreboard: Player[] } | null>(null);
   const sessionRef = useRef<Session | null>(session);
   const sockRef = useRef<RoomSocket | null>(null);
 
@@ -47,7 +57,7 @@ export function useRoom(): RoomApi {
         onRoomState(next, youId) {
           setRoom(next);
           setYou(youId);
-          if (next.status !== "in-progress") {
+          if (next.status === "lobby") {
             setGameState(null);
             setGameOver(null);
           }
@@ -65,6 +75,12 @@ export function useRoom(): RoomApi {
         },
         onGameOver(winnerId) {
           setGameOver({ winnerId });
+        },
+        onRoundComplete(roundNumber, scores, cumulative) {
+          setRoundComplete({ roundNumber, scores, cumulative });
+        },
+        onSessionOver(session, scoreboard) {
+          setSessionOver({ session, scoreboard });
         },
         onSessionDead(reason) {
           applyCleared();
@@ -113,11 +129,11 @@ export function useRoom(): RoomApi {
 
   const dismissNotice = useCallback(() => setNotice(null), []);
 
-  const createRoom = useCallback(async (gameType: string, playerName: string): Promise<boolean> => {
+  const createRoom = useCallback(async (playerName: string): Promise<boolean> => {
     const name = playerName.trim() || "Player";
     let result: AckResult<CreatedRoomPayload>;
     try {
-      result = await requestWhenOpen<CreatedRoomPayload>({ type: "room:create", gameType, playerName: name });
+      result = await requestWhenOpen<CreatedRoomPayload>({ type: "room:create", playerName: name });
     } catch {
       setNotice("Could not reach the server. Try again.");
       return false;
@@ -178,6 +194,10 @@ export function useRoom(): RoomApi {
     applyCleared();
   }, []);
 
+  const selectGame = useCallback((gameId: string): void => {
+    sockRef.current!.requestWhenOpen({ type: "room:select_game", gameId }).catch(() => {});
+  }, []);
+
   const startGame = useCallback((): void => {
     sockRef.current!.requestWhenOpen({ type: "game:start" }).catch(() => {});
   }, []);
@@ -188,6 +208,32 @@ export function useRoom(): RoomApi {
     sockRef.current!.requestWhenOpen({ type: "game:action", roomId: s.roomId, action }).catch(() => {});
   }, []);
 
+  const finishRound = useCallback((scores: RoundScore[]): void => {
+    sockRef.current!.requestWhenOpen({ type: "game:finish_round", scores }).catch(() => {});
+  }, []);
+
+  const rematch = useCallback((): void => {
+    sockRef.current!.requestWhenOpen({ type: "game:rematch" }).catch(() => {});
+    setRoundComplete(null);
+    setSessionOver(null);
+    setGameOver(null);
+  }, []);
+
+  const newGame = useCallback((gameId: string): void => {
+    sockRef.current!.requestWhenOpen({ type: "game:new_game", gameId }).catch(() => {});
+    setRoundComplete(null);
+    setSessionOver(null);
+    setGameOver(null);
+  }, []);
+
+  const clearRoundComplete = useCallback((): void => {
+    setRoundComplete(null);
+  }, []);
+
+  const clearSessionOver = useCallback((): void => {
+    setSessionOver(null);
+  }, []);
+
   const status: NetStatus = useMemo(() => {
     if (!session) return "offline";
     if (sockStatus === "open") return "connected";
@@ -195,7 +241,29 @@ export function useRoom(): RoomApi {
     return "reconnecting";
   }, [session, sockStatus]);
 
-  return { session, room, you, gameState, gameOver, status, notice, dismissNotice, createRoom, joinRoom, leaveRoom, startGame, submitAction };
+  return {
+    session,
+    room,
+    you,
+    gameState,
+    gameOver,
+    roundComplete,
+    sessionOver,
+    status,
+    notice,
+    dismissNotice,
+    clearRoundComplete,
+    clearSessionOver,
+    createRoom,
+    joinRoom,
+    leaveRoom,
+    selectGame,
+    startGame,
+    submitAction,
+    finishRound,
+    rematch,
+    newGame,
+  };
 }
 
 function isCreatedPayload(d: unknown): d is CreatedRoomPayload {

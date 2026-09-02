@@ -1,16 +1,21 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
-import { GAME_CATALOG, type Player, type Room, type GameModule } from "../shared/types";
+import { GAME_CATALOG, type Player, type Room, type GameModule, type GameSession } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 import { generateRoomCode, normalizeRoomCode } from "./roomCodes";
-import { archeryModule, poolModule, crazy8Module, chessModule, crosswordModule } from "../shared/gameModules";
+import { chessModule, crazy8Module, ticTacToeModule, connect4Module, snakeLadderModule, checkersModule, ludoModule, whotModule, ayoModule } from "../shared/gameModules";
+import { ScoreManager } from "./scores";
 
 const gameModuleRegistry = new Map<string, GameModule>();
-gameModuleRegistry.set("archery", archeryModule);
 gameModuleRegistry.set("chess", chessModule);
-gameModuleRegistry.set("pool", poolModule);
 gameModuleRegistry.set("crazy8", crazy8Module);
-gameModuleRegistry.set("crossword", crosswordModule);
+gameModuleRegistry.set("tic_tac_toe", ticTacToeModule);
+gameModuleRegistry.set("connect4", connect4Module);
+gameModuleRegistry.set("snake_ladder", snakeLadderModule);
+gameModuleRegistry.set("checkers", checkersModule);
+gameModuleRegistry.set("ludo", ludoModule);
+gameModuleRegistry.set("whot", whotModule);
+gameModuleRegistry.set("ayo", ayoModule);
 
 const envNum = (key: string, dflt: number): number => {
   const v = Number(process.env[key]);
@@ -33,6 +38,8 @@ interface RoomInternal extends Omit<Room, "players"> {
   players: Seat[];
   lastActivityAt: number;
   gameModule?: GameModule;
+  currentGame: GameSession | null;
+  gameHistory: GameSession[];
 }
 
 interface ConnInfo {
@@ -109,10 +116,18 @@ export class RoomManager {
         return this.handleJoin(ws, msg as ClientMessage & { type: "room:join" });
       case "room:leave":
         return this.handleLeave(ws, msg as ClientMessage & { type: "room:leave" });
+      case "room:select_game":
+        return this.handleSelectGame(ws, msg as ClientMessage & { type: "room:select_game" });
       case "game:start":
         return this.handleGameStart(ws, msg as ClientMessage & { type: "game:start" });
       case "game:action":
         return this.handleGameAction(ws, msg as ClientMessage & { type: "game:action" });
+      case "game:finish_round":
+        return this.handleFinishRound(ws, msg as ClientMessage & { type: "game:finish_round" });
+      case "game:rematch":
+        return this.handleRematch(ws, msg as ClientMessage & { type: "game:rematch" });
+      case "game:new_game":
+        return this.handleNewGame(ws, msg as ClientMessage & { type: "game:new_game" });
       default:
         return this.sendError(ws, "unknown_type", `Unknown message type`, typeof msg.id === "number" ? msg.id : undefined);
     }
@@ -120,23 +135,26 @@ export class RoomManager {
 
   private handleCreate(ws: WebSocket, msg: ClientMessage & { type: "room:create" }): void {
     const id = wireId(msg);
-    const entry = GAME_CATALOG.find((g) => g.id === msg.gameType);
-    if (!entry) return this.sendError(ws, "bad_game", `Unknown game "${String(msg.gameType)}"`, id);
+    const gameType = msg.gameType || "";
+    const entry = gameType ? GAME_CATALOG.find((g) => g.id === gameType) : null;
+    if (gameType && !entry) return this.sendError(ws, "bad_game", `Unknown game "${String(gameType)}"`, id);
 
-    const module = gameModuleRegistry.get(msg.gameType);
-    if (!module) return this.sendError(ws, "bad_game", `Game module not yet implemented for "${msg.gameType}"`, id);
+    const module = gameType ? gameModuleRegistry.get(gameType) : undefined;
+    if (gameType && !module) return this.sendError(ws, "bad_game", `Game module not yet implemented for "${gameType}"`, id);
 
     const now = Date.now();
     const room: RoomInternal = {
       id: generateRoomCode(new Set(this.rooms.keys())),
-      gameType: entry.id,
+      gameType: entry?.id ?? "",
       players: [],
       status: "lobby",
       gameState: null,
       createdAt: now,
       hostId: "",
       lastActivityAt: now,
-      gameModule: module
+      gameModule: module,
+      currentGame: null,
+      gameHistory: [],
     };
     const host = this.newSeat(sanitizeName(msg.playerName), now);
     room.players.push(host);
@@ -203,6 +221,32 @@ export class RoomManager {
     this.broadcastRoom(room);
   }
 
+  private handleSelectGame(ws: WebSocket, msg: ClientMessage & { type: "room:select_game" }): void {
+    const id = wireId(msg);
+    const info = this.conns.get(ws);
+    if (!info?.seatRef) return this.sendError(ws, "not_in_room", "You are not in a room", id);
+
+    const room = this.rooms.get(info.seatRef.roomId);
+    if (!room) return this.sendError(ws, "room_not_found", "Room not found", id);
+    if (room.status !== "lobby") return this.sendError(ws, "game_already_started", "Game already started", id);
+
+    const seat = room.players.find((p) => p.id === info.seatRef!.playerId);
+    if (!seat?.isHost) return this.sendError(ws, "not_host", "Only the host can select the game", id);
+
+    const entry = GAME_CATALOG.find((g) => g.id === msg.gameId);
+    if (!entry) return this.sendError(ws, "bad_game", `Unknown game "${String(msg.gameId)}"`, id);
+
+    const module = gameModuleRegistry.get(msg.gameId);
+    if (!module) return this.sendError(ws, "bad_game", `Game module not yet implemented for "${msg.gameId}"`, id);
+
+    room.gameType = entry.id;
+    room.gameModule = module;
+    this.touch(room);
+
+    this.sendAck(ws, id, true, { gameId: room.gameType });
+    this.broadcastRoom(room);
+  }
+
   private handleGameStart(ws: WebSocket, msg: ClientMessage & { type: "game:start" }): void {
     const id = wireId(msg);
     const info = this.conns.get(ws);
@@ -211,7 +255,7 @@ export class RoomManager {
     const room = this.rooms.get(info.seatRef.roomId);
     if (!room) return this.sendError(ws, "room_not_found", "Room not found", id);
     if (room.status !== "lobby") return this.sendError(ws, "already_started", "Game already started", id);
-    if (!room.gameModule) return this.sendError(ws, "bad_game", "No game module for this room", id);
+    if (!room.gameModule) return this.sendError(ws, "no_game_selected", "Select a game first", id);
 
     const seat = room.players.find((p) => p.id === info.seatRef!.playerId);
     if (!seat?.isHost) return this.sendError(ws, "not_host", "Only the host can start the game", id);
@@ -222,6 +266,10 @@ export class RoomManager {
 
     room.status = "in-progress";
     room.gameState = room.gameModule.createInitialState(room.players);
+    room.currentGame = ScoreManager.createGameSession(
+      room.gameType,
+      ScoreManager.getMaxRounds(room.gameType)
+    );
     this.touch(room);
 
     for (const p of room.players) {
@@ -264,9 +312,124 @@ export class RoomManager {
 
     const result = room.gameModule.checkGameOver(reduced);
     if (result.over) {
-      room.status = "finished";
       this.broadcastToRoom(room, { type: "game:over", winnerId: result.winnerId });
     }
+  }
+
+  private handleFinishRound(ws: WebSocket, msg: ClientMessage & { type: "game:finish_round" }): void {
+    const id = wireId(msg);
+    const info = this.conns.get(ws);
+    if (!info?.seatRef) return this.sendError(ws, "not_in_room", "You are not in a room", id);
+
+    const room = this.rooms.get(info.seatRef.roomId);
+    if (!room) return this.sendError(ws, "room_not_found", "Room not found", id);
+    if (!room.currentGame) return this.sendError(ws, "no_active_game", "No active game session", id);
+    if (room.currentGame.status !== "playing") return this.sendError(ws, "game_not_active", "Game is not in progress", id);
+
+    const seat = room.players.find((p) => p.id === info.seatRef!.playerId);
+    if (!seat?.isHost) return this.sendError(ws, "not_host", "Only the host can submit round scores", id);
+
+    const { scores } = msg;
+    if (!Array.isArray(scores)) return this.sendError(ws, "invalid_scores", "Scores must be an array", id);
+
+    const updatedPlayers = ScoreManager.updateCumulativeScores(room.players, scores);
+    room.players = room.players.map((seat) => {
+      const updated = updatedPlayers.find((p) => p.id === seat.id);
+      return { ...seat, cumulativeScore: updated?.cumulativeScore ?? seat.cumulativeScore };
+    });
+    room.currentGame = ScoreManager.recordRound(room.currentGame, scores);
+    this.touch(room);
+
+    this.sendAck(ws, id, true, {});
+
+    this.broadcastToRoom(room, {
+      type: "round:complete",
+      roundNumber: room.currentGame.currentRound - 1,
+      scores,
+      cumulative: room.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isHost: p.isHost,
+        connected: p.connected,
+        cumulativeScore: p.cumulativeScore,
+      })),
+    });
+
+    if (room.currentGame.status === "finished") {
+      room.gameHistory.push(room.currentGame);
+      this.broadcastToRoom(room, {
+        type: "game:session_over",
+        session: room.currentGame,
+        scoreboard: ScoreManager.getStandings(room.players).map((p) => ({
+          id: p.id,
+          name: p.name,
+          isHost: p.isHost,
+          connected: p.connected,
+          cumulativeScore: p.cumulativeScore,
+        })),
+      });
+    }
+
+    this.broadcastRoom(room);
+  }
+
+  private handleRematch(ws: WebSocket, msg: ClientMessage & { type: "game:rematch" }): void {
+    const id = wireId(msg);
+    const info = this.conns.get(ws);
+    if (!info?.seatRef) return this.sendError(ws, "not_in_room", "You are not in a room", id);
+
+    const room = this.rooms.get(info.seatRef.roomId);
+    if (!room) return this.sendError(ws, "room_not_found", "Room not found", id);
+    if (!room.gameModule) return this.sendError(ws, "bad_game", "No game module for this room", id);
+
+    const seat = room.players.find((p) => p.id === info.seatRef!.playerId);
+    if (!seat?.isHost) return this.sendError(ws, "not_host", "Only the host can start a rematch", id);
+
+    room.status = "in-progress";
+    room.gameState = room.gameModule.createInitialState(room.players);
+    room.currentGame = ScoreManager.createGameSession(
+      room.gameType,
+      ScoreManager.getMaxRounds(room.gameType)
+    );
+    room.players = room.players.map((seat) => ({ ...seat, cumulativeScore: 0 }));
+    this.touch(room);
+
+    for (const p of room.players) {
+      const seatWs = this.seatSockets.get(`${room.id}:${p.id}`);
+      if (!seatWs || seatWs.readyState !== seatWs.OPEN) continue;
+      const view = room.gameModule.getViewFor(room.gameState, p.id);
+      this.sendTo(seatWs, { type: "game:state", state: view, you: p.id });
+    }
+    this.sendAck(ws, id, true, {});
+    this.broadcastRoom(room);
+  }
+
+  private handleNewGame(ws: WebSocket, msg: ClientMessage & { type: "game:new_game" }): void {
+    const id = wireId(msg);
+    const info = this.conns.get(ws);
+    if (!info?.seatRef) return this.sendError(ws, "not_in_room", "You are not in a room", id);
+
+    const room = this.rooms.get(info.seatRef.roomId);
+    if (!room) return this.sendError(ws, "room_not_found", "Room not found", id);
+
+    const seat = room.players.find((p) => p.id === info.seatRef!.playerId);
+    if (!seat?.isHost) return this.sendError(ws, "not_host", "Only the host can choose a new game", id);
+
+    const entry = GAME_CATALOG.find((g) => g.id === msg.gameId);
+    if (!entry) return this.sendError(ws, "bad_game", `Unknown game "${String(msg.gameId)}"`, id);
+
+    const module = gameModuleRegistry.get(msg.gameId);
+    if (!module) return this.sendError(ws, "bad_game", `Game module not yet implemented for "${msg.gameId}"`, id);
+
+    room.gameType = entry.id;
+    room.gameModule = module;
+    room.status = "lobby";
+    room.gameState = null;
+    room.currentGame = null;
+    room.players = room.players.map((seat) => ({ ...seat, cumulativeScore: 0 }));
+    this.touch(room);
+    this.sendAck(ws, id, true, {});
+    this.broadcastRoom(room);
   }
 
   private handleClose(ws: WebSocket): void {
@@ -325,7 +488,7 @@ export class RoomManager {
   }
 
   private newSeat(name: string, now: number): Seat {
-    return { id: randomUUID(), name, isHost: false, connected: false, lastSeenAt: now };
+    return { id: randomUUID(), name, isHost: false, connected: false, lastSeenAt: now, cumulativeScore: 0 };
   }
 
   private touch(room: RoomInternal): void {
@@ -340,7 +503,15 @@ export class RoomManager {
       gameState: room.gameState,
       createdAt: room.createdAt,
       hostId: room.hostId,
-      players: room.players.map((p) => ({ id: p.id, name: p.name, isHost: p.isHost, connected: p.connected }))
+      players: room.players.map((p) => ({
+        id: p.id,
+        name: p.name,
+        isHost: p.isHost,
+        connected: p.connected,
+        cumulativeScore: p.cumulativeScore,
+      })),
+      currentGame: room.currentGame,
+      gameHistory: room.gameHistory,
     };
   }
 
@@ -389,7 +560,9 @@ export class RoomManager {
       gameState: null,
       createdAt: now,
       hostId: "",
-      lastActivityAt: now
+      lastActivityAt: now,
+      currentGame: null,
+      gameHistory: [],
     };
     const host = this.newSeat(sanitizeName(playerName), now);
     room.players.push(host);

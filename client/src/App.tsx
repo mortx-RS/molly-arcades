@@ -27,9 +27,9 @@ export function App() {
     saveProfile(p);
   }, []);
 
-  async function handleCreate(gameType: string, name: string) {
+  async function handleCreate(name: string) {
     setBusy(true);
-    await api.createRoom(gameType, name || profile.name);
+    await api.createRoom(name || profile.name);
     setBusy(false);
   }
 
@@ -47,12 +47,20 @@ export function App() {
           youId={api.you}
           gameState={api.gameState}
           gameOver={api.gameOver}
+          roundComplete={api.roundComplete}
+          sessionOver={api.sessionOver}
           status={api.status}
           games={GAME_CATALOG}
           profile={profile}
           onLeave={api.leaveRoom}
+          onSelectGame={api.selectGame}
           onStartGame={api.startGame}
           onSubmitAction={api.submitAction}
+          onFinishRound={api.finishRound}
+          onRematch={api.rematch}
+          onNewGame={api.newGame}
+          onClearRoundComplete={api.clearRoundComplete}
+          onClearSessionOver={api.clearSessionOver}
         />
         {api.notice && (
           <div className="banner error notice" role="alert">
@@ -69,7 +77,6 @@ export function App() {
   return (
     <main className="app">
       <HomeScreen
-        games={GAME_CATALOG}
         initialCode={initialCode}
         busy={busy}
         profile={profile}

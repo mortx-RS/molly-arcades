@@ -32,6 +32,9 @@ export const T = {
   yellow: "#ddc830",
   yellowDim: "rgba(221, 200, 48, 0.08)",
 
+  gold: "#ffd700",
+  goldDim: "rgba(255, 215, 0, 0.08)",
+
   red: "#ee3355",
   redDim: "rgba(238, 51, 85, 0.08)",
 
