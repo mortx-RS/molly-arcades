@@ -435,7 +435,7 @@ export function SnakeLadderFullscreen({ gameState, youId, gameOver, room, gameNa
       const to = cur[pid];
       const from = prev[pid];
       if (from === undefined || to === from) continue;
-      runAnim(pid, from, to, gsRef.current.dice);
+      runAnim(pid, from, to, gsRef.current.dice ?? 0);
     }
   }, [gameState.positions, runAnim]);
 
