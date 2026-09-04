@@ -3,13 +3,13 @@ import type { WebSocket } from "ws";
 import { GAME_CATALOG, type Player, type Room, type GameModule, type GameSession } from "../shared/types";
 import type { ClientMessage, ServerMessage } from "../shared/protocol";
 import { generateRoomCode, normalizeRoomCode } from "./roomCodes";
-import { chessModule, crazy8Module, ticTacToeModule, connect4Module, snakeLadderModule, checkersModule, ludoModule, whotModule, ayoModule } from "../shared/gameModules";
+import { chessModule, crazy8Module, flappyBirdModule, connect4Module, snakeLadderModule, checkersModule, ludoModule, whotModule, ayoModule } from "../shared/gameModules";
 import { ScoreManager } from "./scores";
 
 const gameModuleRegistry = new Map<string, GameModule>();
 gameModuleRegistry.set("chess", chessModule);
 gameModuleRegistry.set("crazy8", crazy8Module);
-gameModuleRegistry.set("tic_tac_toe", ticTacToeModule);
+gameModuleRegistry.set("flappy_bird", flappyBirdModule);
 gameModuleRegistry.set("connect4", connect4Module);
 gameModuleRegistry.set("snake_ladder", snakeLadderModule);
 gameModuleRegistry.set("checkers", checkersModule);
@@ -22,6 +22,7 @@ const envNum = (key: string, dflt: number): number => {
   return Number.isFinite(v) && v > 0 ? v : dflt;
 };
 
+const TICK_INTERVAL_MS = 50; // 20 ticks per second
 const SEAT_GRACE_MS = envNum("SEAT_GRACE_MS", 5 * 60_000);
 const ROOM_TTL_MS = envNum("ROOM_TTL_MS", 60 * 60_000);
 const EMPTY_ROOM_TTL_MS = envNum("EMPTY_ROOM_TTL_MS", 10 * 60_000);
@@ -60,17 +61,22 @@ export class RoomManager {
   private seatSockets = new Map<string, WebSocket>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
+  private tickTimer: ReturnType<typeof setInterval> | null = null;
+  private pendingInputs = new Map<string, Map<string, unknown[]>>(); // roomId -> playerId -> inputs[]
 
   constructor() {
     this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT_INTERVAL_MS);
     this.sweepTimer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS);
+    this.tickTimer = setInterval(() => this.tickRealtimeGames(), TICK_INTERVAL_MS);
   }
 
   stop(): void {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.sweepTimer) clearInterval(this.sweepTimer);
+    if (this.tickTimer) clearInterval(this.tickTimer);
     this.heartbeatTimer = null;
     this.sweepTimer = null;
+    this.tickTimer = null;
   }
 
   stats(): { rooms: number; sockets: number } {
@@ -122,6 +128,8 @@ export class RoomManager {
         return this.handleGameStart(ws, msg as ClientMessage & { type: "game:start" });
       case "game:action":
         return this.handleGameAction(ws, msg as ClientMessage & { type: "game:action" });
+      case "game:input":
+        return this.handleGameInput(ws, msg as ClientMessage & { type: "game:input" });
       case "game:finish_round":
         return this.handleFinishRound(ws, msg as ClientMessage & { type: "game:finish_round" });
       case "game:rematch":
@@ -314,6 +322,30 @@ export class RoomManager {
     if (result.over) {
       this.broadcastToRoom(room, { type: "game:over", winnerId: result.winnerId });
     }
+  }
+
+  private handleGameInput(ws: WebSocket, msg: ClientMessage & { type: "game:input" }): void {
+    const id = wireId(msg);
+    const info = this.conns.get(ws);
+    if (!info?.seatRef) return this.sendError(ws, "not_in_room", "You are not in a room", id);
+
+    const room = this.rooms.get(info.seatRef.roomId);
+    if (!room) return this.sendError(ws, "room_not_found", "Room not found", id);
+    if (!room.gameModule) return this.sendError(ws, "bad_game", "No game module for this room", id);
+    if (room.gameModule.mode !== "realtime") return this.sendError(ws, "bad_game", "Not a realtime game", id);
+    if (room.status !== "in-progress") return this.sendError(ws, "game_not_active", "Game is not in progress", id);
+
+    const playerId = info.seatRef.playerId;
+    if (!this.pendingInputs.has(room.id)) {
+      this.pendingInputs.set(room.id, new Map());
+    }
+    const roomInputs = this.pendingInputs.get(room.id)!;
+    if (!roomInputs.has(playerId)) {
+      roomInputs.set(playerId, []);
+    }
+    roomInputs.get(playerId)!.push(msg.input);
+
+    this.sendAck(ws, id, true, {});
   }
 
   private handleFinishRound(ws: WebSocket, msg: ClientMessage & { type: "game:finish_round" }): void {
@@ -600,6 +632,7 @@ export class RoomManager {
 
   private destroyRoom(room: RoomInternal, reason: string): void {
     this.rooms.delete(room.id);
+    this.pendingInputs.delete(room.id);
     for (const p of room.players) {
       const key = `${room.id}:${p.id}`;
       const ws = this.seatSockets.get(key);
@@ -621,6 +654,49 @@ export class RoomManager {
       }
       info.alive = false;
       try { ws.ping(); } catch { /* gone */ }
+    }
+  }
+
+  private tickRealtimeGames(): void {
+    const dt = TICK_INTERVAL_MS / 1000;
+    for (const room of this.rooms.values()) {
+      if (room.status !== "in-progress" || !room.gameModule || room.gameModule.mode !== "realtime") continue;
+      if (!room.gameModule.tick) continue;
+
+      const state = room.gameState as Record<string, unknown> | null;
+      if (!state) continue;
+
+      // Collect pending inputs for this room
+      const pendingInputs = this.pendingInputs.get(room.id);
+      const inputs: Record<string, unknown> = {};
+      if (pendingInputs) {
+        for (const [playerId, inputQueue] of pendingInputs) {
+          // Take the most recent flap input, ignore others
+          const lastFlap = [...inputQueue].reverse().find((i: unknown) => (i as { type?: string })?.type === "flap");
+          if (lastFlap) {
+            inputs[playerId] = lastFlap;
+          } else if (inputQueue.length > 0) {
+            inputs[playerId] = inputQueue[inputQueue.length - 1];
+          }
+        }
+        pendingInputs.clear();
+      }
+
+      const reduced = room.gameModule.tick(state as never, dt, inputs as Record<string, never>);
+      room.gameState = reduced;
+      this.touch(room);
+
+      for (const p of room.players) {
+        const seatWs = this.seatSockets.get(`${room.id}:${p.id}`);
+        if (!seatWs || seatWs.readyState !== seatWs.OPEN) continue;
+        const view = room.gameModule.getViewFor(reduced, p.id);
+        this.sendTo(seatWs, { type: "game:state", state: view, you: p.id });
+      }
+
+      const result = room.gameModule.checkGameOver(reduced);
+      if (result.over) {
+        this.broadcastToRoom(room, { type: "game:over", winnerId: result.winnerId });
+      }
     }
   }
 

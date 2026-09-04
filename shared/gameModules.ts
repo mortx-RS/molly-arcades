@@ -1,7 +1,7 @@
 import type { GameModule, Player } from "./types";
 export { chessModule } from "./chessModule";
 export { crazy8Module } from "./crazy8Module";
-export { ticTacToeModule } from "./ticTacToeModule";
+export { flappyBirdModule } from "./flappyBirdModule";
 export { connect4Module } from "./connect4Module";
 export { snakeLadderModule } from "./snakeLadderModule";
 export { checkersModule } from "./checkersModule";

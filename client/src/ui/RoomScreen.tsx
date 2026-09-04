@@ -9,8 +9,8 @@ import { ChessFullscreen } from "./ChessFullscreen";
 import type { ChessView } from "./ChessFullscreen";
 import { Crazy8Fullscreen } from "./Crazy8Fullscreen";
 import type { Crazy8View } from "./Crazy8Fullscreen";
-import { TicTacToeFullscreen } from "./TicTacToeFullscreen";
-import type { TicTacToeView } from "./TicTacToeFullscreen";
+import { FlappyBirdFullscreen } from "./FlappyBirdFullscreen";
+import type { FlappyBirdView } from "./FlappyBirdFullscreen";
 import { Connect4Fullscreen } from "./Connect4Fullscreen";
 import type { Connect4View } from "./Connect4Fullscreen";
 import { SnakeLadderFullscreen } from "./SnakeLadderFullscreen";
@@ -38,6 +38,7 @@ interface Props {
   onSelectGame(gameId: string): void;
   onStartGame(): void;
   onSubmitAction(action: unknown): void;
+  onSubmitInput(input: unknown): void;
   onFinishRound(scores: RoundScore[]): void;
   onRematch(): void;
   onNewGame(gameId: string): void;
@@ -59,6 +60,7 @@ export function RoomScreen({
   onSelectGame,
   onStartGame,
   onSubmitAction,
+  onSubmitInput,
   onFinishRound,
   onRematch,
   onNewGame,
@@ -80,6 +82,7 @@ export function RoomScreen({
   const game = games.find((g) => g.id === (room?.gameType ?? ""));
   const isInProgress = room?.status === "in-progress" && gameState;
   const showGameOver = gameOver && !roundComplete && !sessionOver && !dismissedGameOver;
+  const isHost = room?.hostId === youId;
 
   if (isInProgress && room?.gameType === "chess" && youId) {
     return (
@@ -111,17 +114,17 @@ export function RoomScreen({
     );
   }
 
-  if (isInProgress && room?.gameType === "tic_tac_toe" && youId) {
+  if (isInProgress && room?.gameType === "flappy_bird" && youId) {
     return (
-      <TicTacToeFullscreen
-        gameState={gameState as TicTacToeView}
+      <FlappyBirdFullscreen
+        gameState={gameState as FlappyBirdView}
         youId={youId}
         gameOver={gameOver}
         room={room}
-        gameName={game?.name ?? "Tic Tac Toe"}
+        gameName={game?.name ?? "Flappy Bird"}
         accent={accent}
         onLeave={onLeave}
-        onSubmitAction={onSubmitAction}
+        onSubmitInput={onSubmitInput}
       />
     );
   }
@@ -355,143 +358,177 @@ export function RoomScreen({
 
       {room && (room.status === "lobby" || (gameOver && dismissedGameOver)) && (
         <section className="card animate-in animate-in-delay-3" style={{ position: "relative" }}>
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
-            <div style={{ flex: 1 }}>
-              <h3 style={{ margin: "0 0 4px", fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, letterSpacing: "0.01em" }}>
-                {game && !showGamePicker ? game.name : "Choose a Game"}
-              </h3>
-              <p style={{ margin: 0, fontSize: 13, color: T.chalkDim, lineHeight: 1.5 }}>
-                {game && !showGamePicker ? game.tagline : "Select a game to play with friends."}
-              </p>
-            </div>
-            {game && !showGamePicker && (
-              <div style={{ flexShrink: 0, width: 56, height: 56, borderRadius: 14, background: `${accent}12`, border: `1px solid ${accent}25`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
-                {game.icon ?? "\uD83C\uDFAE"}
-              </div>
-            )}
-          </div>
+          <style>{`
+            .rs-game-card { position: relative; transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease; }
+            .rs-game-card:hover:not(:disabled) { transform: translateY(-2px); }
+            .rs-game-card:active:not(:disabled) { transform: translateY(0); }
+            .rs-change-pill { transition: background 0.15s ease, border-color 0.15s ease; }
+            .rs-change-pill:hover { border-color: ${T.chalkMuted}; }
+          `}</style>
 
           {!game || showGamePicker ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-              {games.map((g) => {
-                const icon = g.icon ?? "\uD83C\uDFAE";
-                const selected = g.id === room.gameType;
-                return (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+                <div>
+                  <h3 style={{ margin: "0 0 4px", fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, letterSpacing: "0.01em" }}>
+                    Choose a game
+                  </h3>
+                  <p style={{ margin: 0, fontSize: 13, color: T.chalkDim, lineHeight: 1.5 }}>
+                    {games.length} to pick from
+                  </p>
+                </div>
+                {game && showGamePicker && (
                   <button
-                    key={g.id}
-                    onClick={() => {
-                      if (room.hostId === youId) {
-                        onSelectGame(g.id);
-                        setShowGamePicker(false);
-                      }
-                    }}
-                    disabled={room.hostId !== youId}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "16px 12px",
-                      background: selected ? `${accent}10` : T.charcoal,
-                      border: `1.5px solid ${selected ? `${accent}40` : T.line}`,
-                      borderRadius: 14,
-                      cursor: room.hostId === youId ? "pointer" : "default",
-                      textAlign: "center",
-                      transition: "all 0.2s ease",
-                      opacity: room.hostId === youId ? 1 : 0.6,
-                    }}
+                    className="rs-change-pill"
+                    onClick={() => setShowGamePicker(false)}
+                    style={{ background: "transparent", border: `1px solid ${T.line}`, borderRadius: 999, padding: "6px 12px", color: T.chalkDim, fontSize: 12, fontWeight: 500, cursor: "pointer", flexShrink: 0 }}
                   >
-                    <div style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: 12,
-                      background: selected ? `${accent}15` : `${T.chalk}06`,
-                      border: `1px solid ${selected ? `${accent}30` : T.line}`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 26,
-                    }}>
-                      {icon}
-                    </div>
-                    <div>
-                      <div style={{
-                        fontFamily: T.fontDisplay,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: selected ? accent : T.chalk,
-                        marginBottom: 2,
-                      }}>{g.name}</div>
-                      <div style={{ fontSize: 10, color: T.chalkMuted }}>
-                        {g.minPlayers}-{g.maxPlayers}p · ~{g.estimatedMinutes}m
-                      </div>
-                    </div>
-                    {selected && (
-                      <div style={{
-                        position: "absolute",
-                        top: 8,
-                        right: 8,
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: accent,
-                      }} />
-                    )}
+                    Cancel
                   </button>
-                );
-              })}
-              {room.hostId !== youId && !game && (
-                <div style={{ gridColumn: "1 / -1", padding: "12px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
+                {games.map((g) => {
+                  const icon = g.icon ?? "\uD83C\uDFAE";
+                  const selected = g.id === room.gameType;
+                  return (
+                    <button
+                      key={g.id}
+                      className="rs-game-card"
+                      onClick={() => {
+                        if (isHost) {
+                          onSelectGame(g.id);
+                          setShowGamePicker(false);
+                        }
+                      }}
+                      disabled={!isHost}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 10,
+                        padding: 14,
+                        background: selected ? `${accent}10` : T.charcoal,
+                        border: `1.5px solid ${selected ? `${accent}45` : T.line}`,
+                        borderRadius: 16,
+                        cursor: isHost ? "pointer" : "default",
+                        textAlign: "left",
+                        opacity: isHost ? 1 : 0.55,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 12,
+                          background: selected ? `${accent}18` : `${T.chalk}08`,
+                          border: `1px solid ${selected ? `${accent}35` : T.line}`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 22,
+                          flexShrink: 0,
+                        }}>
+                          {icon}
+                        </div>
+                        {selected && (
+                          <div style={{ width: 20, height: 20, borderRadius: 999, background: accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.bgDeep} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div style={{ fontFamily: T.fontDisplay, fontSize: 14, fontWeight: 700, color: selected ? accent : T.chalk, marginBottom: 3 }}>
+                          {g.name}
+                        </div>
+                        <p style={{
+                          margin: 0,
+                          fontSize: 11.5,
+                          color: T.chalkDim,
+                          lineHeight: 1.4,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}>
+                          {g.tagline}
+                        </p>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: "auto", paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, color: T.chalkMuted, fontFamily: T.fontMono }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                          </svg>
+                          {g.minPlayers}-{g.maxPlayers}
+                        </span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, color: T.chalkMuted, fontFamily: T.fontMono }}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                          </svg>
+                          ~{g.estimatedMinutes}m
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {!isHost && !game && (
+                <div style={{ marginTop: 10, padding: "12px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
                   Waiting for host to choose a game...
                 </div>
               )}
-              {room.hostId !== youId && game && (
-                <div style={{ gridColumn: "1 / -1", padding: "12px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
+              {!isHost && game && (
+                <div style={{ marginTop: 10, padding: "12px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
                   Host is changing the game...
                 </div>
               )}
-            </div>
+            </>
           ) : (
             <>
-              <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-                <span className="badge" style={{ background: `${accent}12`, color: accent, borderColor: `${accent}25` }}>
-                  {game.minPlayers}\u2013{game.maxPlayers} players
-                </span>
-                <span className="badge" style={{ background: `${T.chalk}06`, color: T.chalkDim, borderColor: T.line }}>
-                  ~{game.estimatedMinutes} min
-                </span>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                    <h3 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, letterSpacing: "0.01em" }}>
+                      {game.name}
+                    </h3>
+                    {isHost && (
+                      <button
+                        className="rs-change-pill"
+                        onClick={() => setShowGamePicker(true)}
+                        style={{ background: "transparent", border: `1px dashed ${T.chalkMuted}60`, borderRadius: 999, padding: "3px 10px", color: T.chalkMuted, fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                      >
+                        Change
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ margin: "0 0 10px", fontSize: 13, color: T.chalkDim, lineHeight: 1.5 }}>
+                    {game.tagline}
+                  </p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span className="badge" style={{ background: `${accent}12`, color: accent, borderColor: `${accent}25` }}>
+                      {game.minPlayers}\u2013{game.maxPlayers} players
+                    </span>
+                    <span className="badge" style={{ background: `${T.chalk}06`, color: T.chalkDim, borderColor: T.line }}>
+                      ~{game.estimatedMinutes} min
+                    </span>
+                  </div>
+                </div>
+                <div style={{ flexShrink: 0, width: 56, height: 56, borderRadius: 14, background: `${accent}12`, border: `1px solid ${accent}25`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
+                  {game.icon ?? "\uD83C\uDFAE"}
+                </div>
               </div>
 
-              {room.hostId === youId && (
-                <button
-                  onClick={() => setShowGamePicker(true)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    padding: "8px 12px",
-                    background: "transparent",
-                    border: `1px dashed ${T.chalkMuted}40`,
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    color: T.chalkMuted,
-                    fontSize: 12,
-                    fontWeight: 500,
-                    marginBottom: 16,
-                    width: "100%",
-                    transition: "all 0.2s ease",
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-                  </svg>
-                  Change game
-                </button>
-              )}
-
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                {room.players.length >= (game?.minPlayers ?? 2) && room.hostId === youId ? (
+                {room.players.length >= (game?.minPlayers ?? 2) && isHost ? (
                   <button
                     className="btn primary"
                     onClick={onStartGame}
@@ -559,7 +596,7 @@ export function RoomScreen({
             <p style={{ margin: "0 0 20px", fontSize: 14, color: T.chalkDim }}>
               {gameOver.winnerId === youId ? "Well played!" : "Better luck next time!"}
             </p>
-            {room?.hostId === youId ? (
+            {isHost ? (
               <button className="btn primary" onClick={() => setDismissedGameOver(true)} style={{ padding: "16px 32px", fontSize: 15, fontWeight: 700 }}>
                 Continue
               </button>
@@ -619,7 +656,7 @@ export function RoomScreen({
               </div>
             </div>
 
-            {room?.hostId === youId ? (
+            {isHost ? (
               <button className="btn primary" onClick={onClearRoundComplete} style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700 }}>
                 Continue to Next Round
               </button>
@@ -669,12 +706,12 @@ export function RoomScreen({
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {room?.hostId === youId && (
+              {isHost && (
                 <button className="btn primary" onClick={onRematch} style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700 }}>
                   Play Again
                 </button>
               )}
-              {room?.hostId === youId && (
+              {isHost && (
                 <div style={{ position: "relative" }}>
                   <button
                     className="btn secondary"
@@ -684,7 +721,7 @@ export function RoomScreen({
                     Choose Another Game
                   </button>
                   {selectedNewGame && (
-                    <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 8, background: T.charcoal, border: `1px solid ${T.line}`, borderRadius: 12, padding: 8, display: "flex", flexDirection: "column", gap: 4, zIndex: 10 }}>
+                    <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 8, background: T.charcoal, border: `1px solid ${T.line}`, borderRadius: 12, padding: 8, display: "flex", flexDirection: "column", gap: 4, zIndex: 10, maxHeight: 280, overflowY: "auto" }}>
                       {games.map((g) => (
                         <button
                           key={g.id}
@@ -716,7 +753,7 @@ export function RoomScreen({
                   )}
                 </div>
               )}
-              {room?.hostId !== youId && (
+              {!isHost && (
                 <div style={{ padding: "14px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 13, fontWeight: 600, textAlign: "center" }}>
                   Waiting for host to choose next game...
                 </div>
@@ -733,6 +770,8 @@ export function RoomScreen({
         className="btn secondary animate-in animate-in-delay-3"
         onClick={onLeave}
         style={{
+          width: "calc(100% - 32px)",
+          boxSizing: "border-box",
           padding: "14px 28px",
           fontSize: 14,
           fontWeight: 600,

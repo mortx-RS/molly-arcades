@@ -25,6 +25,7 @@ interface RoomApi {
   selectGame(gameId: string): void;
   startGame(): void;
   submitAction(action: unknown): void;
+  submitInput(input: unknown): void;
   finishRound(scores: RoundScore[]): void;
   rematch(): void;
   newGame(gameId: string): void;
@@ -208,6 +209,12 @@ export function useRoom(): RoomApi {
     sockRef.current!.requestWhenOpen({ type: "game:action", roomId: s.roomId, action }).catch(() => {});
   }, []);
 
+  const submitInput = useCallback((input: unknown): void => {
+    const s = sessionRef.current;
+    if (!s) return;
+    sockRef.current!.requestWhenOpen({ type: "game:input", roomId: s.roomId, input }).catch(() => {});
+  }, []);
+
   const finishRound = useCallback((scores: RoundScore[]): void => {
     sockRef.current!.requestWhenOpen({ type: "game:finish_round", scores }).catch(() => {});
   }, []);
@@ -260,6 +267,7 @@ export function useRoom(): RoomApi {
     selectGame,
     startGame,
     submitAction,
+    submitInput,
     finishRound,
     rematch,
     newGame,

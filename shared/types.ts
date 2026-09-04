@@ -112,14 +112,14 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     estimatedMinutes: 5
   },
   {
-    id: "tic_tac_toe",
-    name: "Tic Tac Toe",
-    mode: "turn-based",
+    id: "flappy_bird",
+    name: "Flappy Bird",
+    mode: "realtime",
     minPlayers: 2,
-    maxPlayers: 2,
-    tagline: "Three in a row — classic X's and O's.",
-    icon: "❌",
-    estimatedMinutes: 2
+    maxPlayers: 4,
+    tagline: "Last bird standing — flap or perish!",
+    icon: "🐦",
+    estimatedMinutes: 3
   },
   {
     id: "crazy8",

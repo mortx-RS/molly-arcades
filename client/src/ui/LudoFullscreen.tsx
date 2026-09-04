@@ -7,6 +7,8 @@ export interface LudoToken {
   position: number;
   home: boolean;
   finished: boolean;
+  /** Removed from the game by its own capture (attacker clears itself). */
+  cleared?: boolean;
 }
 
 /** One playable move: token `tokenId` advances `steps` and consumes `die` (0 or 1). */
@@ -27,6 +29,9 @@ export interface LudoView {
   playerNames: Record<string, string>;
   myId: string;
   legalMoves: LudoMoveOption[];
+  /** Optional but recommended: pins each player to a seat so colors/houses/
+   *  columns can never mismatch. 0 red TL · 1 green TR · 2 yellow BR · 3 blue BL. */
+  playerSeats?: Record<string, number>;
 }
 
 interface Props {
@@ -40,16 +45,19 @@ interface Props {
   onSubmitAction: (action: unknown) => void;
 }
 
-/* ─── POSITION SEMANTICS (same as before) ─────────────────────────────
- * home===true or position < 0 → base · 0..50 ring steps from own start
- * (set RELATIVE=false for absolute ring indices) · 51..55 home column
- * 56 / finished → home. ──────────────────────────────────────────────── */
-
-const RELATIVE = true;
+/* ─── POSITION SEMANTICS ─────────────────────────────────────────────
+ * POS_MODE "absolute" (your server): position -1 → base · 0..51 shared
+ *   ring index · 52..56 home column (52 = first cell) · 57 or the
+ *   finished flag → center.
+ * POS_MODE "relative": -1 base · 0..50 steps from own start · 51..55
+ *   column · 56 = center.                                     ────────── */
+const POS_MODE: "relative" | "absolute" = "absolute";
 
 const N = 15;
-const SEAT_COLORS = ["#ef4444", "#22c55e", "#eab308", "#3b82f6"];
+const SEAT_COLORS = ["#ef4444", "#22c55e", "#eab308", "#3b82f6"]; // TL, TR, BR, BL
 
+// 52-cell ring, [row, col], clockwise. Seat 0 starts at index 0,
+// seat 1 at 13, seat 2 at 26, seat 3 at 39.
 const RING: [number, number][] = [
   [6, 1], [6, 2], [6, 3], [6, 4], [6, 5],
   [5, 6], [4, 6], [3, 6], [2, 6], [1, 6], [0, 6],
@@ -67,8 +75,9 @@ const RING: [number, number][] = [
 ];
 
 const START_IDX = [0, 13, 26, 39];
-const SAFE_IDX = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+const SAFE_IDX = new Set([0, 8, 13, 21, 26, 34, 39, 47]); // starts + 8 past each start
 
+// 5 home-column cells per seat, ordered from the ring tip toward the center
 const HOME_COL: [number, number][][] = [
   [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]],
   [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]],
@@ -76,6 +85,7 @@ const HOME_COL: [number, number][][] = [
   [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]],
 ];
 
+// base slot centers [x=col, y=row] in cell units
 const BASE_SLOTS: [number, number][][] = [
   [[1.9, 1.9], [4.1, 1.9], [1.9, 4.1], [4.1, 4.1]],
   [[10.9, 1.9], [13.1, 1.9], [10.9, 4.1], [13.1, 4.1]],
@@ -87,6 +97,7 @@ const BASE_RECT = [
   { left: 0, top: 0 }, { left: 9, top: 0 }, { left: 9, top: 9 }, { left: 0, top: 9 },
 ];
 
+// where finished tokens rest inside the center triangles
 const FINISH = [
   { x: 6.82, y: 7.5, dx: 0, dy: 1 },
   { x: 7.5, y: 6.82, dx: 1, dy: 0 },
@@ -103,17 +114,27 @@ function hexA(hex: string, a: number): string {
 
 function vibrate(p: number | number[]) { try { navigator.vibrate?.(p); } catch { /* ignore */ } }
 
-function normPos(t: LudoToken): number {
-  if (t.finished || (t.position ?? -1) >= 56) return 56;
-  if ((t.position ?? -1) < 0) return -1;
-  if (t.home === true && t.position === 0) return -1;
-  return t.position;
+/** Normalize any server encoding to a per-seat "journey":
+ *  -1 base · 0..50 ring (0 = own start) · 51..55 home column · 56 center. */
+function normPos(t: LudoToken, seat: number): number {
+  if (t.finished) return 56;
+  const raw = t.position ?? -1;
+  if (raw < 0) return -1;
+  if (t.home === true && raw === (POS_MODE === "absolute" ? START_IDX[seat]! : 0)) return -1;
+  if (POS_MODE === "absolute") {
+    if (raw >= 57) return 56;          // center
+    if (raw >= 52) return raw - 1;     // column 52..56 → 51..55
+    let j = raw - START_IDX[seat]!;    // ring → steps from own start
+    if (j < 0) j += 52;
+    return j;
+  }
+  return raw >= 56 ? 56 : raw;
 }
 
 function cellFor(seat: number, pos: number, tokenId: number): { x: number; y: number } {
   if (pos < 0) { const s = BASE_SLOTS[seat]![tokenId % 4]!; return { x: s[0], y: s[1] }; }
   if (pos <= 50) {
-    const idx = (((RELATIVE ? START_IDX[seat]! + pos : pos) % 52) + 52) % 52;
+    const idx = (START_IDX[seat]! + pos) % 52;
     const [r, c] = RING[idx]!;
     return { x: c + 0.5, y: r + 0.5 };
   }
@@ -123,12 +144,25 @@ function cellFor(seat: number, pos: number, tokenId: number): { x: number; y: nu
   return { x: f.x + f.dx * off, y: f.y + f.dy * off };
 }
 
-type StepKind = "tick" | "capture" | "deploy" | "home" | "glide";
+type StepKind = "tick" | "capture" | "deploy" | "home" | "glide" | "vanish";
 interface Step { x: number; y: number; kind: StepKind }
 
 function pathBetween(seat: number, oldT: LudoToken, newT: LudoToken): Step[] {
-  const o = normPos(oldT);
-  const n = normPos(newT);
+  const o = normPos(oldT, seat);
+  const n = normPos(newT, seat);
+
+  // attacker cleared by its own capture: walk to the landing square, then vanish there
+  if (newT.cleared && !oldT.cleared) {
+    const steps: Step[] = [];
+    if (o >= 0 && n > o && n <= 56) {
+      for (let p = o + 1; p <= n; p++) steps.push({ ...cellFor(seat, p, newT.id), kind: "tick" });
+    } else if (o >= 0 && n >= 0) {
+      steps.push({ ...cellFor(seat, n, newT.id), kind: "glide" });
+    }
+    steps.push({ ...cellFor(seat, Math.max(n, o, 0), newT.id), kind: "vanish" });
+    return steps;
+  }
+
   if (n === o) return [];
   if (n < 0) {
     if (o < 0) return [];
@@ -200,6 +234,7 @@ class Sfx {
   tick(i: number) { this.blip(390 + Math.min(i, 18) * 24, 0.045, 0.11); }
   deploy() { this.blip(500, 0.07, 0.15); this.blip(700, 0.09, 0.13, 0.07); }
   capture() { this.blip(320, 0.1, 0.2, 0, "square"); this.blip(210, 0.16, 0.16, 0.09, "sawtooth"); }
+  vanish() { this.blip(680, 180, 0.16, 0, "sine"); this.noise(1100, 0.12, 0.1, 0.03); }
   home() { [660, 880, 1175].forEach((f, i) => this.blip(f, 0.12, 0.15, i * 0.08)); }
   win() { [523, 659, 784, 1047].forEach((f, i) => this.blip(f, 0.16, 0.2, i * 0.12)); }
   lose() { this.blip(330, 0.2, 0.18); this.blip(247, 0.3, 0.16, 0.18); }
@@ -348,8 +383,7 @@ const SoundIcon = ({ off }: { off: boolean }) => (
 // ─── Component ───────────────────────────────────────────────────────
 
 export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, accent, onLeave, onSubmitAction }: Props) {
-  // normalize the view — accepts the new 2-dice payload AND the legacy
-  // single-dice shape ({dice: number, legalMoves: number[]}) during migration
+  // normalize the view — accepts the 2-dice payload AND the legacy single-dice shape
   const raw = gameState as unknown as { dice?: unknown; diceUsed?: unknown; legalMoves?: unknown };
 
   const dice: [number | null, number | null] = useMemo(() => {
@@ -387,11 +421,14 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
     return Object.entries(gameState.playerNames ?? {}).map(([id, name]) => ({ id, name }));
   }, [room, gameState.playerNames]);
 
+  // server-provided seats win; otherwise 2-player games sit at opposite corners
   const seatOfPlayer = useCallback((pid: string): number => {
+    const explicit = gameState.playerSeats?.[pid];
+    if (typeof explicit === "number" && explicit >= 0 && explicit <= 3) return explicit;
     const idx = players.findIndex((p) => p.id === pid);
     if (idx < 0) return 0;
     return players.length === 2 ? (idx === 0 ? 0 : 2) : idx % 4;
-  }, [players]);
+  }, [players, gameState.playerSeats]);
 
   const occupiedSeats = useMemo(() => {
     const s = new Set<number>();
@@ -425,7 +462,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
   const px = (v: number) => v * cellPx;
 
   // state
-  const [visual, setVisual] = useState<Record<string, { x: number; y: number; fly?: boolean; scale?: number }>>({});
+  const [visual, setVisual] = useState<Record<string, { x: number; y: number; fly?: boolean; scale?: number; vanish?: boolean }>>({});
   const [animatingKeys, setAnimatingKeys] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState<{ key: string; t: number } | null>(null);
   const [rolling, setRolling] = useState(false);
@@ -470,7 +507,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
     const per = Math.max(95, Math.min(185, 1600 / steps.length));
     steps.forEach((st, i) => {
       ids.push(later(() => {
-        setVisual((v) => ({ ...v, [key]: { x: st.x, y: st.y, fly: st.kind !== "tick" } }));
+        setVisual((v) => ({ ...v, [key]: { x: st.x, y: st.y, fly: st.kind !== "tick", vanish: st.kind === "vanish" } }));
         if (st.kind === "tick") { sfxRef.current!.tick(i); vibrate(6); }
         else if (st.kind === "capture") {
           sfxRef.current!.capture();
@@ -479,6 +516,13 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
           setFlash({ key, t });
           later(() => setFlash((f) => (f && f.t === t ? null : f)), 700);
         } else if (st.kind === "deploy") { sfxRef.current!.deploy(); vibrate(10); }
+        else if (st.kind === "vanish") {
+          sfxRef.current!.vanish();
+          vibrate([15, 40, 15]);
+          const t = performance.now();
+          setFlash({ key, t });
+          later(() => setFlash((f) => (f && f.t === t ? null : f)), 700);
+        }
       }, i * per));
     });
 
@@ -501,7 +545,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
       for (const nt of tokens[pid] ?? []) {
         const ot = (prev[pid] ?? []).find((t) => t.id === nt.id);
         if (!ot) continue;
-        if (ot.position === nt.position && ot.home === nt.home && ot.finished === nt.finished) continue;
+        if (ot.position === nt.position && ot.home === nt.home && ot.finished === nt.finished && ot.cleared === nt.cleared) continue;
         animateToken(pid, seat, ot, nt);
       }
     }
@@ -530,8 +574,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
   }, [rollKey, gameState.isMyTurn, dice]);
 
   // ── auto-pass: "my turn + dice showing + zero options" → pass once ──
-  // This both ends a legit no-moves turn AND recovers from a server that
-  // forgot to clear the dice when the turn changed (the stuck bug).
+
   const stuckKey = gameState.isMyTurn && (dice[0] != null || dice[1] != null) && options.length === 0
     ? `${gameState.currentTurn}|${dice[0]},${dice[1]}|${diceUsed[0]},${diceUsed[1]}`
     : null;
@@ -544,7 +587,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
       return n.isMyTurn && (n.dice[0] != null || n.dice[1] != null) && n.options.length === 0;
     };
     later(() => { if (stillStuck()) actionRef.current({ type: "move", tokenId: -1 }); }, 800);
-    later(() => { if (stillStuck()) actionRef.current({ type: "move", tokenId: -1 }); }, 3400); // one retry
+    later(() => { if (stillStuck()) actionRef.current({ type: "move", tokenId: -1 }); }, 3400);
   }, [stuckKey, later]);
 
   // close any die-chooser whenever the option set changes
@@ -621,8 +664,9 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
     for (const pid of Object.keys(tokens)) {
       const seat = seatOfPlayer(pid);
       for (const t of tokens[pid] ?? []) {
+        if (t.cleared) continue; // removed pieces have no resting place
         const key = `${pid}:${t.id}`;
-        const c = cellFor(seat, normPos(t), t.id);
+        const c = cellFor(seat, normPos(t, seat), t.id);
         const ck = `${Math.round(c.x * 10)},${Math.round(c.y * 10)}`;
         (byCell[ck] ??= []).push(key);
         out[key] = { x: c.x, y: c.y, scale: 1 };
@@ -648,8 +692,8 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
     for (const o of options) {
       if (diceUsed[o.die]) continue;
       const t = mine.find((x) => x.id === o.tokenId);
-      if (!t) continue;
-      const p = normPos(t);
+      if (!t || t.cleared) continue;
+      const p = normPos(t, seat);
       const dest = p < 0 ? 0 : Math.min(p + o.steps, 56);
       const c = cellFor(seat, dest, t.id);
       out.push({ x: c.x + (o.die === 0 ? -0.14 : 0.14), y: c.y, die: o.die, gold: dest >= 56 });
@@ -706,6 +750,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
 
   const won = gameOver?.winnerId === youId;
   const myDone = (gameState.tokens?.[youId] ?? []).filter((t) => t.finished).length;
+  const myLost = (gameState.tokens?.[youId] ?? []).filter((t) => t.cleared).length;
   const showDie2 = dice[1] != null || dice[0] == null;
 
   // ── render ─────────────────────────────────────────────────────────
@@ -726,8 +771,10 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
           border: 2px solid rgba(255,255,255,.85); pointer-events: none;
           animation: ludo-legal 1.1s ease-in-out infinite; }
         .ludo-token.ludo-flash { animation: ludo-flash .65s ease; }
+        .ludo-token.ludo-vanish { animation: ludo-vanish .4s ease-in forwards; }
         @keyframes ludo-legal { 0%, 100% { transform: scale(.9); opacity: .35; } 50% { transform: scale(1.2); opacity: 1; } }
         @keyframes ludo-flash { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,.9); } 100% { box-shadow: 0 0 0 16px rgba(239,68,68,0); } }
+        @keyframes ludo-vanish { to { opacity: 0; transform: translate(-50%,-50%) scale(0); } }
         @keyframes ludo-dest { 0%, 100% { transform: translate(-50%,-50%) scale(.75); opacity: .5; } 50% { transform: translate(-50%,-50%) scale(1.15); opacity: 1; } }
         @keyframes ludo-fade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes ludo-pop { from { opacity: 0; transform: scale(.9) translateY(12px); } to { opacity: 1; transform: none; } }
@@ -769,6 +816,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
           const active = gameState.currentTurn === p.id && !gameOver;
           const toks = gameState.tokens?.[p.id] ?? [];
           const done = toks.filter((t) => t.finished).length;
+          const lost = toks.filter((t) => t.cleared).length;
           const wins = gameState.scores?.[p.id] ?? 0;
           const name = gameState.playerNames?.[p.id] ?? p.name;
           return (
@@ -798,7 +846,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
                 )}
               </div>
               <div style={{ fontFamily: T.fontMono, fontSize: 10.5, fontWeight: 700, color: T.chalkMuted, flexShrink: 0 }}>
-                {done}/4
+                {done}/4{lost > 0 && <span style={{ color: T.pink }}> ·{lost}✕</span>}
               </div>
             </div>
           );
@@ -927,20 +975,21 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
             const isMine = pid === youId;
             return toks.map((t) => {
               const key = `${pid}:${t.id}`;
-              const L = layout[key];
-              if (!L) return null;
               const anim = animatingKeys.has(key);
+              if (t.cleared && !anim) return null; // removed pieces are gone for good
               const v = visual[key];
+              const L = layout[key] ?? (v ? { x: v.x, y: v.y, scale: v.scale ?? 1 } : null);
+              if (!L) return null;
               const pos = anim && v ? v : L;
-              const finished = t.finished || normPos(t) >= 56;
+              const finished = t.finished || normPos(t, seat) >= 56;
               const legal = isMine && gameState.isMyTurn &&
-                (dice[0] != null || dice[1] != null) && !gameOver &&
+                (dice[0] != null || dice[1] != null) && !gameOver && !t.cleared &&
                 options.some((o) => o.tokenId === t.id) && !anim && !helpOpen;
               return (
                 <button
                   key={key}
-                  className={`ludo-token${legal ? " legal" : ""}${flash && flash.key === key ? " ludo-flash" : ""}`}
-                  aria-label={`Token ${t.id + 1}${finished ? ", home" : ""}`}
+                  className={`ludo-token${legal ? " legal" : ""}${flash && flash.key === key ? " ludo-flash" : ""}${v?.vanish ? " ludo-vanish" : ""}`}
+                  aria-label={`Token ${t.id + 1}${finished ? ", home" : t.cleared ? ", removed" : ""}`}
                   onClick={() => handleTokenTap(t.id)}
                   style={{
                     position: "absolute", left: px(pos.x), top: px(pos.y),
@@ -1108,8 +1157,8 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
             <div style={{ fontFamily: T.fontDisplay, fontSize: 15, fontWeight: 800, marginBottom: 12 }}>How to play Ludo</div>
             <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11.5, color: T.chalkMuted, lineHeight: 1.7 }}>
               <li>Roll <b style={{ color: T.chalk }}>both dice</b>, then tap a glowing token. If a token can use either die, you'll choose which to play — split the dice across tokens or spend both on the same one.</li>
-              <li>Tokens travel <b style={{ color: T.chalk }}>clockwise</b> around the track, then up their colored home column to the center.</li>
-              <li>Land on an opponent to send it back to base. <b style={{ color: T.chalk }}>★ squares are safe</b>.</li>
+              <li>Tokens travel <b style={{ color: T.chalk }}>clockwise</b> around the track from their own start square, then up their colored home column to the center.</li>
+              <li>Land on an opponent to send it back to its base — but <b style={{ color: T.chalk }}>your piece is removed from the game too</b>. ★ squares are safe from captures.</li>
               <li>Bring all 4 tokens home to win. Exact steps are needed for the final one.</li>
             </ul>
             <button onClick={() => setHelpOpen(false)} style={{
@@ -1146,7 +1195,7 @@ export function LudoFullscreen({ gameState, youId, gameOver, room, gameName, acc
               {won ? "Victory" : gameOver.winnerId ? "Defeat" : "Draw"}
             </div>
             <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.chalkDim, marginBottom: 4 }}>
-              {myDone}/4 tokens home
+              {myDone}/4 tokens home{myLost > 0 ? ` · ${myLost} removed` : ""}
             </div>
             <div style={{ fontSize: 10, color: T.chalkMuted, marginBottom: 18 }}>
               Match · {(gameState.scores?.[youId] ?? 0)}–{(gameState.scores?.[gameState.winnerId ?? ""] ?? 0)}

@@ -56,6 +56,7 @@ export function App() {
           onSelectGame={api.selectGame}
           onStartGame={api.startGame}
           onSubmitAction={api.submitAction}
+          onSubmitInput={api.submitInput}
           onFinishRound={api.finishRound}
           onRematch={api.rematch}
           onNewGame={api.newGame}

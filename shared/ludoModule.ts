@@ -5,6 +5,7 @@ export interface LudoToken {
   position: number;
   home: boolean;
   finished: boolean;
+  cleared: boolean;
 }
 
 export interface LudoMoveOption {
@@ -41,6 +42,9 @@ function rand(max: number): number {
   return Math.floor(Math.random() * max);
 }
 
+// Standard Ludo safe squares (star squares) — immune from capture
+const SAFE_IDX = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
+
 function nextPlayerId(state: LudoState): string {
   const idx = state.playerIds.indexOf(state.currentTurn);
   return state.playerIds[(idx + 1) % state.playerIds.length]!;
@@ -63,7 +67,7 @@ function recomputeLegal(state: LudoState) {
     if (state.diceUsed[die] || state.dice[die] == null) continue;
     const d = state.dice[die]!;
     for (const t of tokens) {
-      if (t.finished) continue;
+      if (t.finished || t.cleared) continue;
       if (t.home) {
         if (d === 6) out.push({ tokenId: t.id, die, steps: 0 });
       } else {
@@ -73,6 +77,25 @@ function recomputeLegal(state: LudoState) {
     }
   }
   state.legalMoves = out;
+}
+
+function resolveCaptures(state: LudoState, moverPid: string, moved: LudoToken) {
+  const dest = moved.position;
+  if (moved.finished || moved.cleared || dest < 0 || dest > 51) return;
+  if (SAFE_IDX.has(dest)) return;
+  let hit = false;
+  for (const pid of Object.keys(state.tokens)) {
+    if (pid === moverPid) continue;
+    for (const victim of state.tokens[pid]!) {
+      if (victim.finished || victim.cleared) continue;
+      if (victim.position === dest) {
+        victim.position = -1;
+        victim.home = true;
+        hit = true;
+      }
+    }
+  }
+  if (hit) moved.cleared = true;
 }
 
 function applySteps(playerId: string, tokenId: number, steps: number, state: LudoState) {
@@ -105,10 +128,10 @@ export const ludoModule: GameModule<LudoState, LudoAction> = {
     const tokens: Record<string, LudoToken[]> = {};
     for (const p of players) {
       tokens[p.id] = [
-        { id: 0, position: -1, home: true, finished: false },
-        { id: 1, position: -1, home: true, finished: false },
-        { id: 2, position: -1, home: true, finished: false },
-        { id: 3, position: -1, home: true, finished: false },
+        { id: 0, position: -1, home: true, finished: false, cleared: false },
+        { id: 1, position: -1, home: true, finished: false, cleared: false },
+        { id: 2, position: -1, home: true, finished: false, cleared: false },
+        { id: 3, position: -1, home: true, finished: false, cleared: false },
       ];
     }
     const scores: Record<string, number> = {};
@@ -167,6 +190,8 @@ export const ludoModule: GameModule<LudoState, LudoAction> = {
       if (!opt) return state;
 
       applySteps(playerId, opt.tokenId, opt.steps, s);
+      const movedToken = (s.tokens[playerId] ?? []).find((t) => t.id === opt.tokenId);
+      if (movedToken) resolveCaptures(s, playerId, movedToken);
       s.diceUsed[opt.die] = true;
       recomputeLegal(s);
 
@@ -210,6 +235,10 @@ export const ludoModule: GameModule<LudoState, LudoAction> = {
   },
 
   getViewFor(state, playerId) {
+    const playerSeats: Record<string, number> = {};
+    state.playerIds.forEach((pid, idx) => {
+      playerSeats[pid] = idx;
+    });
     return {
       tokens: state.tokens,
       currentTurn: state.currentTurn,
@@ -220,6 +249,7 @@ export const ludoModule: GameModule<LudoState, LudoAction> = {
       winnerId: state.winnerId,
       scores: state.scores,
       playerNames: state.playerNames,
+      playerSeats,
       myId: playerId,
     };
   },
