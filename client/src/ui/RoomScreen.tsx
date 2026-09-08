@@ -250,7 +250,7 @@ export function RoomScreen({
 
   /* ─────────────────────────  Lobby  ───────────────────────── */
 
-  const showLobbyPanel = !!(room && (room.status === "lobby" || (gameOver && dismissedGameOver)));
+  const showLobbyPanel = !!(room && (room.status === "lobby" || room.status === "finished" || (gameOver && dismissedGameOver)));
   const showActionBar = !!(showLobbyPanel && game && !showGamePicker && !showGameOver && !roundComplete && !sessionOver);
   const playersReady = !!(room && game && room.players.length >= (game.minPlayers ?? 2));
 

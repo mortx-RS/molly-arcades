@@ -236,7 +236,9 @@ export class RoomManager {
 
     const room = this.rooms.get(info.seatRef.roomId);
     if (!room) return this.sendError(ws, "room_not_found", "Room not found", id);
-    if (room.status !== "lobby") return this.sendError(ws, "game_already_started", "Game already started", id);
+    if (room.status !== "lobby" && room.status !== "finished") {
+      return this.sendError(ws, "game_already_started", "Game already started", id);
+    }
 
     const seat = room.players.find((p) => p.id === info.seatRef!.playerId);
     if (!seat?.isHost) return this.sendError(ws, "not_host", "Only the host can select the game", id);
@@ -249,6 +251,9 @@ export class RoomManager {
 
     room.gameType = entry.id;
     room.gameModule = module;
+    room.status = "lobby";
+    room.gameState = null;
+    room.currentGame = null;
     this.touch(room);
 
     this.sendAck(ws, id, true, { gameId: room.gameType });
@@ -320,7 +325,9 @@ export class RoomManager {
 
     const result = room.gameModule.checkGameOver(reduced);
     if (result.over) {
+      room.status = "finished";
       this.broadcastToRoom(room, { type: "game:over", winnerId: result.winnerId });
+      this.broadcastRoom(room);
     }
   }
 
@@ -695,7 +702,9 @@ export class RoomManager {
 
       const result = room.gameModule.checkGameOver(reduced);
       if (result.over) {
+        room.status = "finished";
         this.broadcastToRoom(room, { type: "game:over", winnerId: result.winnerId });
+        this.broadcastRoom(room);
       }
     }
   }
