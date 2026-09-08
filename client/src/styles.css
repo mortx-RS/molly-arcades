@@ -76,7 +76,7 @@ body {
 }
 
 body {
-    background: var(--bg);
+    background: #f5f6f8;
     color: var(--chalk);
     font-family: var(--font-body);
     font-size: 15px;
@@ -109,15 +109,15 @@ a {
 /* ═══ App Container ═══ */
 .app {
     height: 100%;
-    max-width: 440px;
+    max-width: 480px;
     margin: 0 auto;
     position: relative;
     z-index: 1;
-    padding: 10px;
+    padding: 0;
+    background: #f5f6f8;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    gap: 12px;
 }
 
 .app > section.card {

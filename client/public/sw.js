@@ -1,6 +1,11 @@
 const CACHE_NAME = "molly-arcade-v2";
 
+const PRECACHE = ["/", "/manifest.json", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png"];
+
 self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((c) => c.addAll(PRECACHE))
+  );
   self.skipWaiting();
 });
 

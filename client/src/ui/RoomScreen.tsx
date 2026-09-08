@@ -3,8 +3,18 @@ import type { GameCatalogEntry, Room, RoundScore, Player, GameSession } from "..
 import type { NetStatus } from "../net/useRoom";
 import type { Profile } from "../net/profile";
 import { copyText } from "./clipboard";
-import { T } from "./theme";
-import { BottomDrawer } from "./BottomDrawer";
+import { D, alpha } from "./design";
+import {
+  ShellStyles,
+  Button,
+  IconButton,
+  Card,
+  Avatar,
+  Pill,
+  Icon,
+  Sheet,
+  Spinner,
+} from "./components";
 import { ChessFullscreen } from "./ChessFullscreen";
 import type { ChessView } from "./ChessFullscreen";
 import { Crazy8Fullscreen } from "./Crazy8Fullscreen";
@@ -23,6 +33,23 @@ import { WhotFullscreen } from "./WhotFullscreen";
 import type { WhotView } from "./WhotFullscreen";
 import { AyoFullscreen } from "./AyoFullscreen";
 import type { AyoView } from "./AyoFullscreen";
+
+const GOLD = "#dda01a";
+
+/** Per-game accent used for the icon tile + selected state in the game list. */
+const GAME_TINT: Record<string, string> = {
+  chess: "#6366f1",
+  checkers: "#ef4444",
+  ludo: "#f59e0b",
+  snake_ladder: "#10b981",
+  connect4: "#3b82f6",
+  flappy_bird: "#eab308",
+  crazy8: "#8b5cf6",
+  whot: "#ec4899",
+  ayo: "#14b8a6",
+  tic_tac_toe: "#0ea5e9",
+  pool: "#22c55e",
+};
 
 interface Props {
   room: Room | null;
@@ -83,6 +110,8 @@ export function RoomScreen({
   const isInProgress = room?.status === "in-progress" && gameState;
   const showGameOver = gameOver && !roundComplete && !sessionOver && !dismissedGameOver;
   const isHost = room?.hostId === youId;
+
+  /* ─── Fullscreen game delegation (legacy screens, revamp pending) ─── */
 
   if (isInProgress && room?.gameType === "chess" && youId) {
     return (
@@ -219,578 +248,616 @@ export function RoomScreen({
     );
   }
 
+  /* ─────────────────────────  Lobby  ───────────────────────── */
+
+  const showLobbyPanel = !!(room && (room.status === "lobby" || (gameOver && dismissedGameOver)));
+  const showActionBar = !!(showLobbyPanel && game && !showGamePicker && !showGameOver && !roundComplete && !sessionOver);
+  const playersReady = !!(room && game && room.players.length >= (game.minPlayers ?? 2));
+
+  const statusLabel =
+    status === "connected" ? "Live"
+    : status === "reconnecting" ? "Reconnecting…"
+    : status === "connecting" ? "Connecting…"
+    : "Offline";
+
   return (
-    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div className="topbar animate-in" style={{ flexShrink: 0, background: "rgba(8, 8, 15, 0.6)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: `1px solid ${T.line}`, borderRadius: "0 0 20px 20px", padding: "12px 16px" }}>
-        <button className="back-btn" aria-label="Leave room" onClick={onLeave} style={{ background: T.charcoal, borderColor: T.lineStrong, width: 44, height: 44, fontSize: 20 }}>&#8249;</button>
-        <h1 className="room-title" style={{ fontSize: 18 }}>{game ? game.name : room?.id ?? "Room"}</h1>
-        <span className={`status-pill${status === "connected" ? " ok" : status === "offline" ? "" : " warn"}`}>
-          {status === "connected" ? "Live" : status === "reconnecting" ? "Reconnecting\u2026" : status === "connecting" ? "Connecting\u2026" : "Offline"}
-        </span>
-      </div>
+    <div
+      style={{
+        height: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        background: D.canvas,
+        color: D.ink,
+        fontFamily: D.fontBody,
+      }}
+    >
+      <ShellStyles />
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 0" }}>
+      {/* Top bar */}
+      <header
+        style={{
+          flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 16px",
+          background: alpha("#ffffff", 0.85),
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          borderBottom: `1px solid ${D.line}`,
+        }}
+      >
+        <IconButton ariaLabel="Leave room" onClick={onLeave} size={42}>
+          <Icon name="back" size={20} />
+        </IconButton>
+        <h1
+          style={{
+            flex: 1,
+            minWidth: 0,
+            margin: 0,
+            fontFamily: D.fontDisplay,
+            fontSize: 18,
+            fontWeight: 750,
+            letterSpacing: "-0.01em",
+            color: D.ink,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {game && !showGamePicker ? game.name : "Game lobby"}
+        </h1>
+        <Pill tone={status === "connected" ? "success" : status === "offline" ? "danger" : "warn"} mono>
+          {status === "connected" && (
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: D.success, display: "inline-block" }} />
+          )}
+          {statusLabel}
+        </Pill>
+      </header>
 
-      {status === "reconnecting" && (
-        <div className="banner animate-in" style={{ margin: "12px 16px 0", borderRadius: 12, background: T.yellowDim, borderColor: "rgba(221, 200, 48, 0.2)", animation: "slideDown 0.3s ease" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
-              <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
-              <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="1"></path>
-            </svg>
-            <span>Connection dropped \u2014 restoring your seat\u2026</span>
+      {/* Scroll body */}
+      <div className="ma2-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+        {status === "reconnecting" && (
+          <div
+            className="ma2-in"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              padding: "12px 14px",
+              borderRadius: D.rMd,
+              background: D.warnSoft,
+              border: `1px solid ${alpha(D.warn, 0.22)}`,
+              color: D.warn,
+              fontSize: 13,
+              fontWeight: 550,
+            }}
+          >
+            <Icon name="loader" size={16} className="ma2-spin" />
+            Connection dropped — restoring your seat…
           </div>
-        </div>
-      )}
+        )}
 
-      <section className="card animate-in animate-in-delay-1" style={{ position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${accent}12 0%, transparent 50%)`, opacity: 0.5, pointerEvents: "none" }} />
-        <h2>Room code</h2>
-        {room ? (
-          <>
-            <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 8 }}>
-              <p className="code-display" style={{ margin: 0, userSelect: "all", fontSize: 36, letterSpacing: "0.25em" }}>{room.id}</p>
-              <button onClick={() => copy("code")} style={{ width: 44, height: 44, borderRadius: 12, ...T.glass(), color: copied === "code" ? T.green : accent, borderColor: copied === "code" ? "rgba(0, 232, 123, 0.3)" : `${accent}30`, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" }} aria-label="Copy room code">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-              </button>
-            </div>
-            <p className="code-hint" style={{ margin: "0 0 16px" }}>Share this code or link to invite friends.</p>
-            <div className="row">
-              <button className="btn small secondary" onClick={() => copy("code")} style={{ flex: 1 }}>
-                {copied === "code" ? "Copied \u2713" : "Copy code"}
-              </button>
-              <button className="btn small secondary" onClick={() => copy("link")} style={{ flex: 1 }}>
-                {copied === "link" ? "Copied \u2713" : "Copy link"}
-              </button>
-            </div>
-          </>
-        ) : <p className="muted">Connecting\u2026</p>}
-      </section>
+        {/* Invite hero */}
+        <Card className="ma2-in ma2-d1" style={{ textAlign: "center" }} padding={22}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: D.inkFaint,
+              fontFamily: D.fontMono,
+              textTransform: "uppercase",
+              letterSpacing: "0.16em",
+              marginBottom: 10,
+            }}
+          >
+            Room code
+          </div>
+          <button
+            onClick={() => copy("code")}
+            className="ma2-press"
+            aria-label="Copy room code"
+            style={{
+              background: "none",
+              border: "none",
+              cursor: room ? "pointer" : "default",
+              padding: 0,
+              width: "100%",
+              fontFamily: D.fontMono,
+              fontSize: 38,
+              fontWeight: 700,
+              letterSpacing: "0.14em",
+              color: room ? D.ink : D.inkFaint,
+              lineHeight: 1,
+            }}
+          >
+            {room ? room.id : "······"}
+          </button>
+          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+            <Button
+              block={false}
+              variant="secondary"
+              onClick={() => copy("code")}
+              leftIcon={<Icon name={copied === "code" ? "check" : "copy"} size={16} strokeWidth={copied === "code" ? 2.5 : 2} />}
+              style={{ flex: 1, color: copied === "code" ? D.success : D.ink, borderColor: copied === "code" ? alpha(D.success, 0.4) : D.lineStrong }}
+            >
+              {copied === "code" ? "Copied!" : "Copy code"}
+            </Button>
+            <Button
+              block={false}
+              variant="secondary"
+              onClick={() => copy("link")}
+              leftIcon={<Icon name={copied === "link" ? "check" : "link"} size={16} strokeWidth={copied === "link" ? 2.5 : 2} />}
+              style={{ flex: 1, color: copied === "link" ? D.success : D.ink, borderColor: copied === "link" ? alpha(D.success, 0.4) : D.lineStrong }}
+            >
+              {copied === "link" ? "Copied!" : "Share link"}
+            </Button>
+          </div>
+        </Card>
 
-      <section className="card animate-in animate-in-delay-2">
-        <h2>Players <span style={{ fontWeight: 400, color: T.chalkMuted, fontSize: 12, marginLeft: 8 }}>{room?.players.length ?? 0} / {game?.maxPlayers ?? "?"}</span></h2>
-        <ul className="player-list">
-          {(room?.players ?? []).map((p, idx) => (
-            <li className="player-row" key={p.id} style={{ animationDelay: `${0.06 * (idx + 1)}s` }}>
-              <div style={{
-                width: 36,
-                height: 36,
-                borderRadius: 999,
-                background: p.connected ? `linear-gradient(135deg, ${accent} 0%, ${T.violet} 100%)` : T.surface,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontFamily: T.fontDisplay,
-                fontSize: 14,
-                fontWeight: 700,
-                color: p.connected ? T.bgDeep : T.chalkMuted,
-                boxShadow: p.connected ? `0 0 12px ${accent}40` : "none",
-                flexShrink: 0,
-                border: p.isHost ? `2px solid ${accent}` : "none",
-                position: "relative"
-              }}>
-                {p.isHost && (
-                  <span style={{
-                    position: "absolute",
-                    bottom: -2,
-                    right: -2,
-                    width: 14,
-                    height: 14,
-                    borderRadius: 999,
-                    background: accent,
-                    border: `2px solid ${T.bgDeep}`,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 8
-                  }}>
-                    <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                    </svg>
-                  </span>
-                )}
-                {!p.connected && (
-                  <span style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: 999,
-                    background: "rgba(4,4,10,0.6)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center"
-                  }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: T.red }}>
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="15" y1="9" x2="9" y2="15"></line>
-                      <line x1="9" y1="9" x2="15" y2="15"></line>
-                    </svg>
-                  </span>
-                )}
+        {/* Players */}
+        <Card className="ma2-in ma2-d2">
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <span style={{ fontSize: 14.5, fontWeight: 700, color: D.ink, fontFamily: D.fontDisplay, letterSpacing: "-0.01em" }}>
+              Players
+            </span>
+            <Pill tone="neutral" mono>
+              {room?.players.length ?? 0} / {game?.maxPlayers ?? "?"}
+            </Pill>
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+            {(room?.players ?? []).map((p, idx) => (
+              <div
+                key={p.id}
+                className="ma2-in"
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, width: 60, animationDelay: `${0.05 * (idx + 1)}s` }}
+              >
+                <Avatar
+                  content={p.name.slice(0, 1).toUpperCase()}
+                  size={50}
+                  dim={!p.connected}
+                  bg={p.connected ? alpha(accent, 0.14) : D.surfaceAlt}
+                  color={p.connected ? accent : D.inkFaint}
+                  ring={p.isHost ? GOLD : p.id === youId ? accent : undefined}
+                  badge={
+                    p.isHost ? (
+                      <span style={{ position: "absolute", bottom: -3, right: -3, width: 18, height: 18, borderRadius: "50%", background: GOLD, border: `2px solid ${D.surface}`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+                        <Icon name="crown" size={10} fill="#fff" strokeWidth={0} />
+                      </span>
+                    ) : !p.connected ? (
+                      <span style={{ position: "absolute", bottom: -3, right: -3, width: 18, height: 18, borderRadius: "50%", background: D.danger, border: `2px solid ${D.surface}`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" }}>
+                        <Icon name="close" size={10} strokeWidth={3} />
+                      </span>
+                    ) : null
+                  }
+                />
+                <span style={{ fontSize: 11.5, fontWeight: 600, color: p.id === youId ? accent : D.inkSoft, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {p.id === youId ? "You" : p.name}
+                </span>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <span className="player-name" style={{ display: "block", fontWeight: 500 }}>{p.name}</span>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                  <span style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: 999,
-                    background: p.connected ? T.green : T.red,
-                    boxShadow: p.connected ? `0 0 6px ${T.greenGlow}` : `0 0 6px ${T.pinkGlow}`
-                  }} />
-                  <span style={{ fontSize: 11, fontFamily: T.fontMono, color: p.connected ? T.green : T.chalkMuted, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    {p.connected ? "Online" : "Away"}
-                  </span>
-                  {p.id === youId && (
-                    <span className="badge" style={{ background: `${accent}15`, color: accent, borderColor: `${accent}25` }}>You</span>
-                  )}
-                  {p.isHost && p.id !== youId && (
-                    <span className="badge host" style={{ background: T.neonDim, color: T.neon, borderColor: T.lineAccent }}>Host</span>
-                  )}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+            ))}
 
-      {room && (room.status === "lobby" || (gameOver && dismissedGameOver)) && (
-        <section className="card animate-in animate-in-delay-3" style={{ position: "relative" }}>
-          <style>{`
-            .rs-game-card { position: relative; transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease; }
-            .rs-game-card:hover:not(:disabled) { transform: translateY(-2px); }
-            .rs-game-card:active:not(:disabled) { transform: translateY(0); }
-            .rs-change-pill { transition: background 0.15s ease, border-color 0.15s ease; }
-            .rs-change-pill:hover { border-color: ${T.chalkMuted}; }
-          `}</style>
-
-          {!game || showGamePicker ? (
-            <>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-                <div>
-                  <h3 style={{ margin: "0 0 4px", fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, letterSpacing: "0.01em" }}>
-                    Choose a game
-                  </h3>
-                  <p style={{ margin: 0, fontSize: 13, color: T.chalkDim, lineHeight: 1.5 }}>
-                    {games.length} to pick from
-                  </p>
-                </div>
-                {game && showGamePicker && (
-                  <button
-                    className="rs-change-pill"
-                    onClick={() => setShowGamePicker(false)}
-                    style={{ background: "transparent", border: `1px solid ${T.line}`, borderRadius: 999, padding: "6px 12px", color: T.chalkDim, fontSize: 12, fontWeight: 500, cursor: "pointer", flexShrink: 0 }}
-                  >
-                    Cancel
-                  </button>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-                {games.map((g) => {
-                  const icon = g.icon ?? "\uD83C\uDFAE";
-                  const selected = g.id === room.gameType;
-                  return (
-                    <button
-                      key={g.id}
-                      className="rs-game-card"
-                      onClick={() => {
-                        if (isHost) {
-                          onSelectGame(g.id);
-                          setShowGamePicker(false);
-                        }
-                      }}
-                      disabled={!isHost}
+            {/* Empty seats */}
+            {room && game
+              ? Array.from({ length: Math.max(0, (game.maxPlayers ?? 0) - room.players.length) }).slice(0, 6).map((_, i) => (
+                  <div key={`empty-${i}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, width: 60 }}>
+                    <div
                       style={{
+                        width: 50,
+                        height: 50,
+                        borderRadius: D.rMd,
+                        border: `1.5px dashed ${D.lineHeavy}`,
                         display: "flex",
-                        flexDirection: "column",
-                        gap: 10,
-                        padding: 14,
-                        background: selected ? `${accent}10` : T.charcoal,
-                        border: `1.5px solid ${selected ? `${accent}45` : T.line}`,
-                        borderRadius: 16,
-                        cursor: isHost ? "pointer" : "default",
-                        textAlign: "left",
-                        opacity: isHost ? 1 : 0.55,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: D.inkFaint,
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-                        <div style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: 12,
-                          background: selected ? `${accent}18` : `${T.chalk}08`,
-                          border: `1px solid ${selected ? `${accent}35` : T.line}`,
+                      <Icon name="plus" size={16} strokeWidth={2} />
+                    </div>
+                    <span style={{ fontSize: 11, color: D.inkFaint }}>Open</span>
+                  </div>
+                ))
+              : null}
+
+            {(!room || room.players.length === 0) && (
+              <span style={{ color: D.inkFaint, fontSize: 13 }}>Waiting for players…</span>
+            )}
+          </div>
+
+          {room && room.players.length <= 1 && (
+            <div style={{ marginTop: 14, fontSize: 12.5, color: D.inkSoft, textAlign: "center" }}>
+              Share the code above to invite friends.
+            </div>
+          )}
+        </Card>
+
+        {/* Game picker / selected */}
+        {showLobbyPanel && (
+          <Card className="ma2-in ma2-d2">
+            {!game || showGamePicker ? (
+              <>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+                  <h2 style={{ margin: 0, fontFamily: D.fontDisplay, fontSize: 17, fontWeight: 750, letterSpacing: "-0.01em", color: D.ink }}>
+                    Choose a game
+                  </h2>
+                  {game && showGamePicker ? (
+                    <button
+                      onClick={() => setShowGamePicker(false)}
+                      className="ma2-press"
+                      style={{ background: "transparent", border: `1px solid ${D.lineStrong}`, borderRadius: D.rPill, padding: "6px 14px", color: D.inkSoft, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+                    >
+                      Cancel
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: 12, color: D.inkFaint, fontFamily: D.fontMono }}>{games.length} games</span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {games.map((g, idx) => {
+                    const isReadOnly = !isHost;
+                    const icon = g.icon ?? "\uD83C\uDFAE";
+                    const selected = g.id === room?.gameType;
+                    const tint = GAME_TINT[g.id] ?? D.brand;
+                    return (
+                      <button
+                        key={g.id}
+                        className="ma2-press ma2-in"
+                        onClick={() => {
+                          if (isHost) {
+                            onSelectGame(g.id);
+                            setShowGamePicker(false);
+                          }
+                        }}
+                        disabled={isReadOnly}
+                        aria-disabled={isReadOnly}
+                        style={{
                           display: "flex",
                           alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 22,
-                          flexShrink: 0,
-                        }}>
+                          gap: 13,
+                          padding: "11px 13px",
+                          background: selected ? alpha(tint, 0.08) : D.surface,
+                          border: `1.5px solid ${selected ? alpha(tint, 0.45) : D.line}`,
+                          borderRadius: D.rMd,
+                          cursor: isHost ? "pointer" : "default",
+                          textAlign: "left",
+                          opacity: isHost ? 1 : 0.72,
+                          animationDelay: `${0.03 * idx}s`,
+                        }}
+                      >
+                        {/* Icon tile */}
+                        <div
+                          style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: D.rMd,
+                            background: alpha(tint, 0.14),
+                            border: `1px solid ${alpha(tint, 0.26)}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 25,
+                            flexShrink: 0,
+                          }}
+                        >
                           {icon}
                         </div>
-                        {selected && (
-                          <div style={{ width: 20, height: 20, borderRadius: 999, background: accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={T.bgDeep} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
+
+                        {/* Text */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: D.fontDisplay, fontSize: 15.5, fontWeight: 700, color: D.ink, letterSpacing: "-0.01em" }}>
+                            {g.name}
                           </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <div style={{ fontFamily: T.fontDisplay, fontSize: 14, fontWeight: 700, color: selected ? accent : T.chalk, marginBottom: 3 }}>
-                          {g.name}
+                          <div style={{ fontSize: 12.5, color: D.inkSoft, lineHeight: 1.35, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {g.tagline}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 6, color: D.inkFaint, fontFamily: D.fontMono, fontSize: 11 }}>
+                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <Icon name="users" size={11} /> {g.minPlayers === g.maxPlayers ? g.minPlayers : `${g.minPlayers}–${g.maxPlayers}`}
+                            </span>
+                            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <Icon name="clock" size={11} /> ~{g.estimatedMinutes}m
+                            </span>
+                          </div>
                         </div>
-                        <p style={{
-                          margin: 0,
-                          fontSize: 11.5,
-                          color: T.chalkDim,
-                          lineHeight: 1.4,
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}>
-                          {g.tagline}
-                        </p>
-                      </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: "auto", paddingTop: 10, borderTop: `1px solid ${T.line}` }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, color: T.chalkMuted, fontFamily: T.fontMono }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="9" cy="7" r="4"></circle>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                          </svg>
-                          {g.minPlayers}-{g.maxPlayers}
-                        </span>
-                        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10.5, color: T.chalkMuted, fontFamily: T.fontMono }}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                          </svg>
-                          ~{g.estimatedMinutes}m
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+                        {/* Select indicator */}
+                        {isHost ? (
+                          <span
+                            style={{
+                              width: 24,
+                              height: 24,
+                              borderRadius: "50%",
+                              flexShrink: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: selected ? tint : "transparent",
+                              border: selected ? "none" : `2px solid ${D.lineHeavy}`,
+                              color: "#fff",
+                            }}
+                          >
+                            {selected && <Icon name="check" size={14} strokeWidth={3} />}
+                          </span>
+                        ) : selected ? (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: tint,
+                              fontFamily: D.fontMono,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.04em",
+                            }}
+                          >
+                            Picked
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
 
-              {!isHost && !game && (
-                <div style={{ marginTop: 10, padding: "12px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
-                  Waiting for host to choose a game...
-                </div>
-              )}
-              {!isHost && game && (
-                <div style={{ marginTop: 10, padding: "12px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
-                  Host is changing the game...
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                {!isHost && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, padding: 12, background: D.surface, border: `1px solid ${D.line}`, borderRadius: D.rMd, color: D.inkFaint, fontSize: 13 }}>
+                    <Icon name="info" size={18} />
+                    <span style={{ flex: 1 }}>Only the host can pick a game.</span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                    <h3 style={{ margin: 0, fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, letterSpacing: "0.01em" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                    <h2 style={{ margin: 0, fontFamily: D.fontDisplay, fontSize: 19, fontWeight: 750, letterSpacing: "-0.01em", color: D.ink }}>
                       {game.name}
-                    </h3>
+                    </h2>
                     {isHost && (
                       <button
-                        className="rs-change-pill"
                         onClick={() => setShowGamePicker(true)}
-                        style={{ background: "transparent", border: `1px dashed ${T.chalkMuted}60`, borderRadius: 999, padding: "3px 10px", color: T.chalkMuted, fontSize: 11, fontWeight: 600, cursor: "pointer" }}
+                        className="ma2-press"
+                        style={{ background: "transparent", border: `1px dashed ${D.lineHeavy}`, borderRadius: D.rPill, padding: "3px 11px", color: D.inkSoft, fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}
                       >
                         Change
                       </button>
                     )}
                   </div>
-                  <p style={{ margin: "0 0 10px", fontSize: 13, color: T.chalkDim, lineHeight: 1.5 }}>
+                  <p style={{ margin: "0 0 12px", fontSize: 13.5, color: D.inkSoft, lineHeight: 1.5 }}>
                     {game.tagline}
                   </p>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span className="badge" style={{ background: `${accent}12`, color: accent, borderColor: `${accent}25` }}>
-                      {game.minPlayers}\u2013{game.maxPlayers} players
-                    </span>
-                    <span className="badge" style={{ background: `${T.chalk}06`, color: T.chalkDim, borderColor: T.line }}>
-                      ~{game.estimatedMinutes} min
-                    </span>
+                    <Pill tone="accent" accent={accent}>
+                      {game.minPlayers}–{game.maxPlayers} players
+                    </Pill>
+                    <Pill tone="neutral">~{game.estimatedMinutes} min</Pill>
+                    {!playersReady && <Pill tone="warn">Need {game.minPlayers ?? 2} to start</Pill>}
                   </div>
                 </div>
-                <div style={{ flexShrink: 0, width: 56, height: 56, borderRadius: 14, background: `${accent}12`, border: `1px solid ${accent}25`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
+                <div
+                  style={{
+                    flexShrink: 0,
+                    width: 58,
+                    height: 58,
+                    borderRadius: D.rLg,
+                    background: alpha(GAME_TINT[game.id] ?? D.brand, 0.14),
+                    border: `1px solid ${alpha(GAME_TINT[game.id] ?? D.brand, 0.26)}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 27,
+                  }}
+                >
                   {game.icon ?? "\uD83C\uDFAE"}
                 </div>
               </div>
+            )}
+          </Card>
+        )}
 
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                {room.players.length >= (game?.minPlayers ?? 2) && isHost ? (
-                  <button
-                    className="btn primary"
-                    onClick={onStartGame}
-                    style={{
-                      flex: 1,
-                      minWidth: 200,
-                      padding: "14px 24px",
-                      fontSize: 15,
-                      fontWeight: 700,
-                      letterSpacing: "0.02em",
-                      boxShadow: `0 4px 24px ${accent}30, 0 2px 8px rgba(0,0,0,0.3)`,
-                      position: "relative",
-                      overflow: "hidden"
-                    }}
+        {/* Game over */}
+        {showGameOver && (
+          <Card className="ma2-in" style={{ textAlign: "center", overflow: "hidden" }}>
+            <div style={{ fontSize: 52, marginBottom: 6 }}>
+              {gameOver.winnerId === youId ? "\uD83C\uDFC6" : "\uD83D\uDC4F"}
+            </div>
+            <h2 style={{ margin: "0 0 4px", fontFamily: D.fontDisplay, fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", color: gameOver.winnerId === youId ? D.success : D.ink }}>
+              {gameOver.winnerId === youId ? "You won!" : "Good game"}
+            </h2>
+            <p style={{ margin: "0 0 18px", fontSize: 14, color: D.inkSoft }}>
+              {gameOver.winnerId === youId ? "Nicely played." : "Better luck next round!"}
+            </p>
+            {isHost ? (
+              <Button size="lg" onClick={() => setDismissedGameOver(true)}>
+                Continue
+              </Button>
+            ) : (
+              <div style={{ padding: 14, background: D.brandSoft, border: `1px solid ${alpha(D.brand, 0.2)}`, borderRadius: D.rMd, color: D.brand, fontSize: 13, fontWeight: 600 }}>
+                Waiting for host to continue…
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* Leave */}
+        <button
+          onClick={onLeave}
+          className="ma2-press"
+          style={{ alignSelf: "center", background: "transparent", border: "none", color: D.inkFaint, fontSize: 13, fontWeight: 550, cursor: "pointer", padding: "6px 16px", marginTop: 2 }}
+        >
+          Leave room
+        </button>
+      </div>
+
+      {/* Sticky action bar */}
+      {showActionBar && game && room && (
+        <div
+          style={{
+            flexShrink: 0,
+            background: alpha("#ffffff", 0.9),
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            borderTop: `1px solid ${D.line}`,
+            padding: "14px 16px calc(14px + env(safe-area-inset-bottom, 0px))",
+          }}
+        >
+          {playersReady && isHost ? (
+            <Button
+              size="lg"
+              onClick={onStartGame}
+              leftIcon={<Icon name="play" size={17} fill="currentColor" strokeWidth={0} />}
+              rightIcon={
+                <span style={{ fontFamily: D.fontMono, fontSize: 12, background: "rgba(255,255,255,0.2)", padding: "2px 8px", borderRadius: D.rPill }}>
+                  {room.players.length} ready
+                </span>
+              }
+            >
+              Start game
+            </Button>
+          ) : !playersReady ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, background: D.warnSoft, border: `1px solid ${alpha(D.warn, 0.22)}`, borderRadius: D.rMd, color: D.warn, fontSize: 13, fontWeight: 600 }}>
+              <Icon name="alert" size={16} />
+              Need {game.minPlayers ?? 2} players to start ({room.players.length}/{game.minPlayers ?? 2})
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 14, background: D.brandSoft, border: `1px solid ${alpha(D.brand, 0.2)}`, borderRadius: D.rMd, color: D.brand, fontSize: 13, fontWeight: 600 }}>
+              <Spinner size={15} color={D.brand} />
+              Waiting for host to start…
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Round complete */}
+      {roundComplete && (
+        <Sheet open onClose={onClearRoundComplete} title={`Round ${roundComplete.roundNumber} complete`}>
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel>Round scores</SectionLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {roundComplete.scores.map((score, idx) => {
+                const player = room?.players.find((p) => p.id === score.playerId);
+                return (
+                  <ScoreRow
+                    key={score.playerId}
+                    rank={idx}
+                    name={player?.name ?? "Unknown"}
+                    highlight={idx === 0 ? accent : undefined}
+                    value={`+${score.score}`}
+                    isYou={score.playerId === youId}
+                    accent={accent}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel>Overall standings</SectionLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[...roundComplete.cumulative]
+                .sort((a, b) => b.cumulativeScore - a.cumulativeScore)
+                .map((player, idx) => (
+                  <ScoreRow
+                    key={player.id}
+                    rank={idx}
+                    name={player.name}
+                    highlight={idx === 0 ? GOLD : undefined}
+                    value={`${player.cumulativeScore}`}
+                    isYou={player.id === youId}
+                    accent={accent}
+                  />
+                ))}
+            </div>
+          </div>
+
+          {isHost ? (
+            <Button onClick={onClearRoundComplete}>Continue to next round</Button>
+          ) : (
+            <div style={{ padding: 14, background: D.brandSoft, border: `1px solid ${alpha(D.brand, 0.2)}`, borderRadius: D.rMd, color: D.brand, fontSize: 13, fontWeight: 600, textAlign: "center" }}>
+              Waiting for host to continue…
+            </div>
+          )}
+        </Sheet>
+      )}
+
+      {/* Session over */}
+      {sessionOver && (
+        <Sheet open onClose={onClearSessionOver} title="Game complete">
+          <div style={{ textAlign: "center", marginBottom: 22 }}>
+            <div style={{ fontSize: 54, marginBottom: 6 }}>
+              {sessionOver.scoreboard[0]?.id === youId ? "\uD83C\uDFC6" : "\uD83C\uDFC5"}
+            </div>
+            <h2 style={{ margin: "0 0 4px", fontFamily: D.fontDisplay, fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", color: D.ink }}>
+              {sessionOver.scoreboard[0]?.id === youId ? "Champion!" : "Great game!"}
+            </h2>
+            <p style={{ margin: 0, fontSize: 14, color: D.inkSoft }}>
+              {sessionOver.session.maxRounds} rounds completed
+            </p>
+          </div>
+
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel center>Final standings</SectionLabel>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {sessionOver.scoreboard.map((player, idx) => (
+                <ScoreRow
+                  key={player.id}
+                  rank={idx}
+                  name={player.name}
+                  highlight={idx === 0 ? GOLD : undefined}
+                  value={`${player.cumulativeScore}`}
+                  isYou={player.id === youId}
+                  accent={accent}
+                  large
+                />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {isHost && <Button onClick={onRematch}>Play again</Button>}
+            {isHost && (
+              <div style={{ position: "relative" }}>
+                <Button variant="secondary" onClick={() => setSelectedNewGame(selectedNewGame ? null : "new")}>
+                  Choose another game
+                </Button>
+                {selectedNewGame && (
+                  <div
+                    className="ma2-scroll"
+                    style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 8, background: D.surface, border: `1px solid ${D.lineStrong}`, borderRadius: D.rMd, boxShadow: D.shadowLg, padding: 8, display: "flex", flexDirection: "column", gap: 2, zIndex: 10, maxHeight: 280, overflowY: "auto" }}
                   >
-                    <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "pulse 1.5s ease-in-out infinite" }}>
-                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                      </svg>
-                      Start Game
-                      <span style={{ fontFamily: T.fontMono, fontSize: 12, opacity: 0.9, background: "rgba(0,0,0,0.15)", padding: "2px 8px", borderRadius: 999 }}>
-                        {room.players.length} ready
-                      </span>
-                    </span>
-                  </button>
-                ) : room.players.length < (game?.minPlayers ?? 2) ? (
-                  <div style={{ flex: 1, minWidth: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px", background: T.yellowDim, border: `1px solid rgba(221, 200, 48, 0.2)`, borderRadius: 12, color: T.yellow, fontSize: 13, fontWeight: 600 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <line x1="12" y1="8" x2="12" y2="12"></line>
-                      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                    </svg>
-                    Need {game?.minPlayers ?? 2} players to start ({room.players.length}/{game?.minPlayers ?? 2})
-                  </div>
-                ) : (
-                  <div style={{ flex: 1, minWidth: 200, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 13, fontWeight: 600 }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: "spin 1s linear infinite" }}>
-                      <circle cx="12" cy="12" r="10" strokeOpacity="0.25"></circle>
-                      <path d="M12 2a10 10 0 0 1 10 10" strokeOpacity="1"></path>
-                    </svg>
-                    Waiting for host to start\u2026
+                    {games.map((g) => (
+                      <button
+                        key={g.id}
+                        onClick={() => {
+                          onNewGame(g.id);
+                          setSelectedNewGame(null);
+                        }}
+                        className="ma2-press"
+                        style={{ display: "flex", alignItems: "center", gap: 12, padding: 10, background: "transparent", border: "none", borderRadius: D.rSm, cursor: "pointer", textAlign: "left", color: D.ink }}
+                      >
+                        <span style={{ fontSize: 20 }}>{g.icon}</span>
+                        <div>
+                          <div style={{ fontWeight: 650, fontSize: 14 }}>{g.name}</div>
+                          <div style={{ fontSize: 11, color: D.inkFaint }}>{g.minPlayers}-{g.maxPlayers} players</div>
+                        </div>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>
-            </>
-          )}
-
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 11, fontFamily: T.fontMono, color: T.chalkMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            <span>Room: {room?.id ?? "\u2014"}</span>
-            <span>{room?.players.length ?? 0} / {game?.maxPlayers ?? "?"}</span>
-          </div>
-        </section>
-      )}
-
-      {showGameOver && (
-        <section className="card animate-in" style={{ textAlign: "center", position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", inset: 0, background: gameOver.winnerId === youId ? `radial-gradient(ellipse at center, ${T.greenDim} 0%, transparent 70%)` : `radial-gradient(ellipse at center, ${T.pinkDim} 0%, transparent 70%)`, pointerEvents: "none" }} />
-          <div style={{ position: "relative" }}>
-            <div style={{ fontSize: 56, marginBottom: 8, filter: "drop-shadow(0 4px 16px rgba(0,0,0,0.3))" }}>
-              {gameOver.winnerId === youId ? "\uD83C\uDFC6" : "\uD83D\uDCA5"}
-            </div>
-            <h2 style={{ margin: "0 0 4px", fontFamily: T.fontDisplay, fontSize: 28, fontWeight: 800, color: gameOver.winnerId === youId ? T.green : T.red, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              {gameOver.winnerId === youId ? "Victory!" : "Defeat"}
-            </h2>
-            <p style={{ margin: "0 0 20px", fontSize: 14, color: T.chalkDim }}>
-              {gameOver.winnerId === youId ? "Well played!" : "Better luck next time!"}
-            </p>
-            {isHost ? (
-              <button className="btn primary" onClick={() => setDismissedGameOver(true)} style={{ padding: "16px 32px", fontSize: 15, fontWeight: 700 }}>
-                Continue
-              </button>
-            ) : (
-              <div style={{ padding: "14px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 13, fontWeight: 600 }}>
-                Waiting for host to continue...
+            )}
+            {!isHost && (
+              <div style={{ padding: 14, background: D.brandSoft, border: `1px solid ${alpha(D.brand, 0.2)}`, borderRadius: D.rMd, color: D.brand, fontSize: 13, fontWeight: 600, textAlign: "center" }}>
+                Waiting for host to choose next game…
               </div>
             )}
+            <Button variant="ghost" onClick={onLeave}>
+              Leave room
+            </Button>
           </div>
-        </section>
+        </Sheet>
       )}
-
-      {roundComplete && (
-        <BottomDrawer open={true} onClose={onClearRoundComplete} title={`Round ${roundComplete.roundNumber} Complete`}>
-          <div style={{ padding: "0 4px" }}>
-            <div style={{ marginBottom: 24 }}>
-              <h3 style={{ margin: "0 0 12px", fontFamily: T.fontDisplay, fontSize: 14, fontWeight: 700, color: T.chalkMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                Round Scores
-              </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {roundComplete.scores.map((score, idx) => {
-                  const player = room?.players.find((p) => p.id === score.playerId);
-                  const medal = idx === 0 ? "\uD83E\uDD47" : idx === 1 ? "\uD83E\uDD48" : idx === 2 ? "\uD83E\uDD49" : "";
-                  return (
-                    <div key={score.playerId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: idx === 0 ? `${accent}10` : T.bg, borderRadius: 12, border: idx === 0 ? `1px solid ${accent}25` : `1px solid ${T.line}` }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <span style={{ fontFamily: T.fontMono, fontSize: 12, color: T.chalkMuted, width: 20 }}>{medal || `${idx + 1}.`}</span>
-                        <span style={{ fontWeight: 600, color: T.chalk }}>{player?.name ?? "Unknown"}</span>
-                      </div>
-                      <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: idx === 0 ? accent : T.chalk, fontSize: 16 }}>+{score.score}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <h3 style={{ margin: "0 0 12px", fontFamily: T.fontDisplay, fontSize: 14, fontWeight: 700, color: T.chalkMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                Overall Standings
-              </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {roundComplete.cumulative
-                  .sort((a, b) => b.cumulativeScore - a.cumulativeScore)
-                  .map((player, idx) => {
-                    const medal = idx === 0 ? "\uD83E\uDD47" : idx === 1 ? "\uD83E\uDD48" : idx === 2 ? "\uD83E\uDD49" : "";
-                    return (
-                      <div key={player.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: idx === 0 ? `${T.gold}10` : T.charcoal, borderRadius: 12, border: idx === 0 ? `1px solid ${T.gold}25` : `1px solid ${T.line}` }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                          <span style={{ fontFamily: T.fontMono, fontSize: 14, width: 24 }}>{medal || `${idx + 1}.`}</span>
-                          <span style={{ fontWeight: 600, color: T.chalk }}>{player.name}</span>
-                          {player.id === youId && <span style={{ fontSize: 10, color: accent, background: `${accent}15`, padding: "2px 6px", borderRadius: 6 }}>YOU</span>}
-                        </div>
-                        <span style={{ fontFamily: T.fontMono, fontWeight: 700, color: T.chalk, fontSize: 18 }}>{player.cumulativeScore}</span>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {isHost ? (
-              <button className="btn primary" onClick={onClearRoundComplete} style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700 }}>
-                Continue to Next Round
-              </button>
-            ) : (
-              <div style={{ padding: "14px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 13, fontWeight: 600, textAlign: "center" }}>
-                Waiting for host to continue...
-              </div>
-            )}
-          </div>
-        </BottomDrawer>
-      )}
-
-      {sessionOver && (
-        <BottomDrawer open={true} onClose={onClearSessionOver} title="Game Complete">
-          <div style={{ padding: "0 4px" }}>
-            <div style={{ textAlign: "center", marginBottom: 24 }}>
-              <div style={{ fontSize: 56, marginBottom: 8, filter: "drop-shadow(0 4px 16px rgba(0,0,0,0.3))" }}>
-                {sessionOver.scoreboard[0]?.id === youId ? "\uD83C\uDFC6" : "\uD83C\uDFC5"}
-              </div>
-              <h2 style={{ margin: "0 0 4px", fontFamily: T.fontDisplay, fontSize: 24, fontWeight: 800, color: T.chalk }}>
-                {sessionOver.scoreboard[0]?.id === youId ? "Champion!" : "Great Game!"}
-              </h2>
-              <p style={{ margin: 0, fontSize: 14, color: T.chalkDim }}>
-                {sessionOver.session.maxRounds} rounds completed
-              </p>
-            </div>
-
-            <div style={{ marginBottom: 24 }}>
-              <h3 style={{ margin: "0 0 12px", fontFamily: T.fontDisplay, fontSize: 14, fontWeight: 700, color: T.chalkMuted, textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center" }}>
-                Final Standings
-              </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {sessionOver.scoreboard.map((player, idx) => {
-                  const medal = idx === 0 ? "\uD83E\uDD47" : idx === 1 ? "\uD83E\uDD48" : idx === 2 ? "\uD83E\uDD49" : "";
-                  return (
-                    <div key={player.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: idx === 0 ? `linear-gradient(135deg, ${T.gold}15 0%, ${T.gold}05 100%)` : T.charcoal, borderRadius: 12, border: idx === 0 ? `1.5px solid ${T.gold}30` : `1px solid ${T.line}` }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <span style={{ fontFamily: T.fontMono, fontSize: 16, width: 28, textAlign: "center" }}>{medal || `${idx + 1}.`}</span>
-                        <span style={{ fontWeight: 700, color: T.chalk, fontSize: 16 }}>{player.name}</span>
-                        {player.id === youId && <span style={{ fontSize: 10, color: accent, background: `${accent}15`, padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>YOU</span>}
-                      </div>
-                      <span style={{ fontFamily: T.fontMono, fontWeight: 800, color: idx === 0 ? T.gold : T.chalk, fontSize: 20 }}>{player.cumulativeScore}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {isHost && (
-                <button className="btn primary" onClick={onRematch} style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 700 }}>
-                  Play Again
-                </button>
-              )}
-              {isHost && (
-                <div style={{ position: "relative" }}>
-                  <button
-                    className="btn secondary"
-                    onClick={() => setSelectedNewGame(selectedNewGame ? null : "new")}
-                    style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 600 }}
-                  >
-                    Choose Another Game
-                  </button>
-                  {selectedNewGame && (
-                    <div style={{ position: "absolute", bottom: "100%", left: 0, right: 0, marginBottom: 8, background: T.charcoal, border: `1px solid ${T.line}`, borderRadius: 12, padding: 8, display: "flex", flexDirection: "column", gap: 4, zIndex: 10, maxHeight: 280, overflowY: "auto" }}>
-                      {games.map((g) => (
-                        <button
-                          key={g.id}
-                          onClick={() => {
-                            onNewGame(g.id);
-                            setSelectedNewGame(null);
-                          }}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 12,
-                            padding: "12px",
-                            background: "transparent",
-                            border: "none",
-                            borderRadius: 8,
-                            cursor: "pointer",
-                            textAlign: "left",
-                            color: T.chalk,
-                          }}
-                        >
-                          <span style={{ fontSize: 20 }}>{g.icon}</span>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 14 }}>{g.name}</div>
-                            <div style={{ fontSize: 11, color: T.chalkMuted }}>{g.minPlayers}-{g.maxPlayers} players</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {!isHost && (
-                <div style={{ padding: "14px", background: T.neonDim, border: `1px solid ${T.lineAccent}`, borderRadius: 12, color: T.neon, fontSize: 13, fontWeight: 600, textAlign: "center" }}>
-                  Waiting for host to choose next game...
-                </div>
-              )}
-              <button className="btn secondary" onClick={onLeave} style={{ width: "100%", padding: "14px", fontSize: 14, fontWeight: 600 }}>
-                Leave Room
-              </button>
-            </div>
-          </div>
-        </BottomDrawer>
-      )}
-
-      <button
-        className="btn secondary animate-in animate-in-delay-3"
-        onClick={onLeave}
-        style={{
-          width: "calc(100% - 32px)",
-          boxSizing: "border-box",
-          padding: "14px 28px",
-          fontSize: 14,
-          fontWeight: 600,
-          borderColor: T.lineStrong,
-          background: T.surface,
-          margin: "0 16px 16px"
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-            <polyline points="16 17 21 12 16 7"></polyline>
-            <line x1="21" y1="12" x2="9" y2="12"></line>
-          </svg>
-          Leave room
-        </span>
-      </button>
-
-      </div>
     </div>
   );
 
@@ -801,4 +868,75 @@ export function RoomScreen({
     setCopied(ok ? kind : null);
     if (ok) setTimeout(() => setCopied(null), 1600);
   }
+}
+
+/* ─────────────────────────  Local helpers  ───────────────────────── */
+
+function SectionLabel({ children, center }: { children: React.ReactNode; center?: boolean }) {
+  return (
+    <h3
+      style={{
+        margin: "0 0 12px",
+        fontFamily: D.fontDisplay,
+        fontSize: 12,
+        fontWeight: 700,
+        color: D.inkFaint,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        textAlign: center ? "center" : "left",
+      }}
+    >
+      {children}
+    </h3>
+  );
+}
+
+function ScoreRow({
+  rank,
+  name,
+  value,
+  highlight,
+  isYou,
+  accent,
+  large,
+}: {
+  rank: number;
+  name: string;
+  value: string;
+  highlight?: string;
+  isYou?: boolean;
+  accent: string;
+  large?: boolean;
+}) {
+  const medal = rank === 0 ? "\uD83E\uDD47" : rank === 1 ? "\uD83E\uDD48" : rank === 2 ? "\uD83E\uDD49" : "";
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: large ? "14px 16px" : "12px 14px",
+        background: highlight ? alpha(highlight, 0.1) : D.surfaceAlt,
+        borderRadius: D.rMd,
+        border: `1px solid ${highlight ? alpha(highlight, 0.28) : D.line}`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <span style={{ fontFamily: D.fontMono, fontSize: large ? 16 : 13, width: 24, textAlign: "center", color: D.inkSoft }}>
+          {medal || `${rank + 1}`}
+        </span>
+        <span style={{ fontWeight: 650, color: D.ink, fontSize: large ? 15 : 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {name}
+        </span>
+        {isYou && (
+          <span style={{ fontSize: 10, color: accent, background: alpha(accent, 0.14), padding: "2px 7px", borderRadius: D.rPill, fontWeight: 700, flexShrink: 0 }}>
+            YOU
+          </span>
+        )}
+      </div>
+      <span style={{ fontFamily: D.fontMono, fontWeight: 800, color: highlight ?? D.ink, fontSize: large ? 19 : 16, flexShrink: 0 }}>
+        {value}
+      </span>
+    </div>
+  );
 }

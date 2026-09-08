@@ -148,7 +148,7 @@ export const GAME_CATALOG: GameCatalogEntry[] = [
     minPlayers: 2,
     maxPlayers: 2,
     tagline: "Oware strategy — capture the most seeds.",
-    icon: " seeds",
+    icon: "\uD83E\uDED8",
     estimatedMinutes: 15
   }
 ];

@@ -5,6 +5,48 @@ import { loadProfile, saveProfile } from "./net/profile";
 import type { Profile } from "./net/profile";
 import { HomeScreen } from "./ui/HomeScreen";
 import { RoomScreen } from "./ui/RoomScreen";
+import { D, alpha } from "./ui/design";
+import { Icon } from "./ui/components";
+
+function Notice({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        position: "fixed",
+        left: "50%",
+        transform: "translateX(-50%)",
+        bottom: "calc(20px + env(safe-area-inset-bottom, 0px))",
+        zIndex: 300,
+        width: "calc(100% - 32px)",
+        maxWidth: 420,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "12px 14px",
+        background: D.surface,
+        border: `1px solid ${alpha(D.danger, 0.3)}`,
+        borderRadius: D.rMd,
+        boxShadow: D.shadowLg,
+        color: D.ink,
+        fontSize: 13.5,
+        fontFamily: D.fontBody,
+      }}
+    >
+      <span style={{ color: D.danger, display: "flex", flexShrink: 0 }}>
+        <Icon name="alert" size={18} />
+      </span>
+      <span style={{ flex: 1 }}>{message}</span>
+      <button
+        aria-label="Dismiss"
+        onClick={onDismiss}
+        style={{ background: "none", border: "none", color: D.inkFaint, cursor: "pointer", display: "flex", flexShrink: 0, padding: 2 }}
+      >
+        <Icon name="close" size={16} strokeWidth={2.5} />
+      </button>
+    </div>
+  );
+}
 
 export function App() {
   const api = useRoom();
@@ -63,14 +105,7 @@ export function App() {
           onClearRoundComplete={api.clearRoundComplete}
           onClearSessionOver={api.clearSessionOver}
         />
-        {api.notice && (
-          <div className="banner error notice" role="alert">
-            {api.notice}
-            <button aria-label="Dismiss" onClick={api.dismissNotice}>
-              ×
-            </button>
-          </div>
-        )}
+        {api.notice && <Notice message={api.notice} onDismiss={api.dismissNotice} />}
       </main>
     );
   }
@@ -85,14 +120,7 @@ export function App() {
         onJoin={handleJoin}
         onProfileChange={handleProfileChange}
       />
-      {api.notice && (
-        <div className="banner error notice" role="alert">
-          {api.notice}
-          <button aria-label="Dismiss" onClick={api.dismissNotice}>
-            ×
-          </button>
-        </div>
-      )}
+      {api.notice && <Notice message={api.notice} onDismiss={api.dismissNotice} />}
     </main>
   );
 }
