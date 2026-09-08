@@ -5,6 +5,8 @@ export interface LudoToken {
   position: number;
   home: boolean;
   finished: boolean;
+  /** Legacy field. Kept in the type for backward compatibility with the UI,
+   *  but standard Ludo never removes the attacking piece on capture. */
   cleared: boolean;
 }
 
@@ -31,7 +33,9 @@ type LudoAction =
   | { type: "move"; tokenId: number; die: number }
   | { type: "pass" };
 
-const HOME_POSITIONS: Record<number, number> = {
+/** Ring index where each seat's track begins. The first square for seat N is
+ *  this index; the "home column" begins after completing the 52-square lap. */
+const START_POSITIONS: Record<number, number> = {
   0: 0,
   1: 13,
   2: 26,
@@ -42,7 +46,7 @@ function rand(max: number): number {
   return Math.floor(Math.random() * max);
 }
 
-// Standard Ludo safe squares (star squares) — immune from capture
+// Standard Ludo safe squares (start squares + star squares) — immune from capture
 const SAFE_IDX = new Set([0, 8, 13, 21, 26, 34, 39, 47]);
 
 function nextPlayerId(state: LudoState): string {
@@ -57,11 +61,15 @@ function endTurn(state: LudoState, extraRoll: boolean) {
   if (!extraRoll) state.currentTurn = nextPlayerId(state);
 }
 
+function seatIndex(playerId: string): number {
+  return parseInt(playerId) % 4;
+}
+
 function recomputeLegal(state: LudoState) {
   const out: LudoMoveOption[] = [];
   const playerId = state.currentTurn;
   const tokens = state.tokens[playerId] ?? [];
-  const homeIdx = HOME_POSITIONS[parseInt(playerId) % 4] ?? 0;
+  const homeIdx = START_POSITIONS[seatIndex(playerId)] ?? 0;
 
   for (const die of [0, 1] as const) {
     if (state.diceUsed[die] || state.dice[die] == null) continue;
@@ -69,20 +77,27 @@ function recomputeLegal(state: LudoState) {
     for (const t of tokens) {
       if (t.finished || t.cleared) continue;
       if (t.home) {
+        // Standard Ludo: only a 6 brings a token out of the base/house
         if (d === 6) out.push({ tokenId: t.id, die, steps: 0 });
       } else {
-        const p = t.position - homeIdx;
-        if (p + d <= 56) out.push({ tokenId: t.id, die, steps: d });
+        const relative = t.position - homeIdx;
+        // 0..50 on the shared ring, 51..55 home column, 56 finish.
+        // Exact count is required to enter home; overshoots are illegal.
+        if (relative + d <= 56) out.push({ tokenId: t.id, die, steps: d });
       }
     }
   }
   state.legalMoves = out;
 }
 
-function resolveCaptures(state: LudoState, moverPid: string, moved: LudoToken) {
+/** Capture a single opponent on the destination square. Returns true if a
+ *  capture occurred. Standard Ludo: the attacker stays, the victim returns
+ *  to its base. */
+function resolveCaptures(state: LudoState, moverPid: string, moved: LudoToken): boolean {
   const dest = moved.position;
-  if (moved.finished || moved.cleared || dest < 0 || dest > 51) return;
-  if (SAFE_IDX.has(dest)) return;
+  if (moved.finished || moved.cleared || dest < 0 || dest > 51) return false;
+  if (SAFE_IDX.has(dest)) return false;
+
   let hit = false;
   for (const pid of Object.keys(state.tokens)) {
     if (pid === moverPid) continue;
@@ -95,27 +110,41 @@ function resolveCaptures(state: LudoState, moverPid: string, moved: LudoToken) {
       }
     }
   }
-  if (hit) moved.cleared = true;
+  return hit;
 }
 
-function applySteps(playerId: string, tokenId: number, steps: number, state: LudoState) {
-  const homeIdx = HOME_POSITIONS[parseInt(playerId) % 4] ?? 0;
+interface ApplyResult {
+  entered: boolean;
+  finished: boolean;
+}
+
+function applySteps(playerId: string, tokenId: number, steps: number, state: LudoState): ApplyResult {
+  const homeIdx = START_POSITIONS[seatIndex(playerId)] ?? 0;
   const tokens = state.tokens[playerId] ?? [];
   const token = tokens.find((t) => t.id === tokenId);
-  if (!token) return;
+  if (!token) return { entered: false, finished: false };
 
   if (steps === 0) {
+    // Rolling a 6 deploys the token onto its starting square.
     token.position = homeIdx;
     token.home = false;
-    return;
+    return { entered: true, finished: false };
   }
 
+  const relativeBefore = token.position - homeIdx;
+  const relativeAfter = relativeBefore + steps;
+
+  // Exact roll required to finish; overshoots are not allowed here because
+  // recomputeLegal already filters them out.
+  if (relativeAfter > 56) return { entered: false, finished: false };
+
   token.position += steps;
-  const relativePos = token.position - homeIdx;
-  if (relativePos >= 56) {
+  if (relativeAfter === 56) {
     token.finished = true;
     token.position = -1;
+    return { entered: false, finished: true };
   }
+  return { entered: false, finished: false };
 }
 
 export const ludoModule: GameModule<LudoState, LudoAction> = {
@@ -189,9 +218,10 @@ export const ludoModule: GameModule<LudoState, LudoAction> = {
       const opt = s.legalMoves.find((o) => o.tokenId === action.tokenId && o.die === action.die);
       if (!opt) return state;
 
-      applySteps(playerId, opt.tokenId, opt.steps, s);
+      const rolledSix = s.dice[0] === 6 || s.dice[1] === 6;
+      const result = applySteps(playerId, opt.tokenId, opt.steps, s);
       const movedToken = (s.tokens[playerId] ?? []).find((t) => t.id === opt.tokenId);
-      if (movedToken) resolveCaptures(s, playerId, movedToken);
+      const captured = movedToken ? resolveCaptures(s, playerId, movedToken) : false;
       s.diceUsed[opt.die] = true;
       recomputeLegal(s);
 
@@ -208,16 +238,13 @@ export const ludoModule: GameModule<LudoState, LudoAction> = {
         return s;
       }
 
-      const doubles = s.dice[0] === s.dice[1];
       const bothUsed = s.diceUsed[0] && s.diceUsed[1];
+      const extraRoll = rolledSix || captured || result.finished;
+
       if (s.legalMoves.length === 0) {
-        endTurn(s, doubles && bothUsed);
-      } else if (bothUsed && !doubles) {
-        endTurn(s, false);
-      } else if (bothUsed && doubles) {
-        s.diceUsed = [false, false];
-        recomputeLegal(s);
-        if (s.legalMoves.length === 0) endTurn(s, false);
+        endTurn(s, extraRoll);
+      } else if (bothUsed) {
+        endTurn(s, extraRoll);
       }
 
       return s;
